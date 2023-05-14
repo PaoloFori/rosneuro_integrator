@@ -7,7 +7,7 @@
 #include <std_srvs/Empty.h>
 #include <pluginlib/class_loader.h>
 #include <rosneuro_msgs/NeuroOutput.h>
-#include "rosneuro_integrators/GenericIntegrator.h"
+#include "rosneuro_integrator/GenericIntegrator.h"
 
 
 namespace rosneuro {
@@ -37,7 +37,11 @@ class Integrator {
 		ros::NodeHandle p_nh_;
 		ros::Subscriber	sub_;
 		ros::Publisher	pub_;
-
+		ros::ServiceServer srv_reset_;
+		
+		rosneuro_msgs::NeuroOutput neurooutput_;
+		bool has_new_data_;
+		
 		std::string plugin_;
 		std::string integratorname_;
 
@@ -45,8 +49,6 @@ class Integrator {
 
 		std::unique_ptr<pluginlib::ClassLoader<GenericIntegrator>> loader_;
 
-		rosneuro_msgs::NeuroOutput neurooutput_;
-		bool has_new_data_;
 
 
 };

@@ -6,11 +6,12 @@ Integrator::Integrator(void) : p_nh_("~") {
 
 	this->has_new_data_ = false;
 
-	this->loader_.reset(new pluginlib::ClassLoader<GenericIntegrator>("rosneuro_integrators", "rosneuro::GenericIntegrator"));
+	this->loader_.reset(new pluginlib::ClassLoader<GenericIntegrator>("rosneuro_integrator", "rosneuro::GenericIntegrator"));
 
 }
 
 Integrator::~Integrator(void) {
+	boost::shared_ptr<GenericIntegrator>().swap(this->integrator_);
 	this->loader_.reset();
 }
 
@@ -42,6 +43,9 @@ bool Integrator::configure(void) {
 	// Subscriber and publisher
 	this->sub_ = this->nh_.subscribe("/smr/neuroprediction", 1, &Integrator::on_received_neurodata, this);
 	this->pub_ = this->p_nh_.advertise<rosneuro_msgs::NeuroOutput>("/integrated", 1);
+
+	// Services
+	this->srv_reset_ = this->p_nh_.advertiseService("reset", &Integrator::on_reset_integrator, this);
 
 	return true;
 }
