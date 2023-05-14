@@ -31,6 +31,7 @@ class Integrator {
 	private:
 		Eigen::VectorXf vector_to_eigen(const std::vector<float>& in);
 		std::vector<float> eigen_to_vector(const Eigen::VectorXf& in);
+		bool is_over_threshold(const Eigen::VectorXf& values);
 
 	private:
 		ros::NodeHandle nh_;
@@ -40,7 +41,10 @@ class Integrator {
 		ros::ServiceServer srv_reset_;
 		
 		rosneuro_msgs::NeuroOutput neurooutput_;
+		std::vector<float> thresholds_;
+
 		bool has_new_data_;
+		bool has_thresholds_;
 		
 		std::string plugin_;
 		std::string integratorname_;

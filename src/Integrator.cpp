@@ -4,7 +4,8 @@ namespace rosneuro {
 
 Integrator::Integrator(void) : p_nh_("~") {
 
-	this->has_new_data_ = false;
+	this->has_new_data_   = false;
+	this->has_thresholds_ = true;
 
 	this->loader_.reset(new pluginlib::ClassLoader<GenericIntegrator>("rosneuro_integrator", "rosneuro::GenericIntegrator"));
 
@@ -40,6 +41,12 @@ bool Integrator::configure(void) {
 	}
 	ROS_INFO("The integrator \'%s\' has been correctly created and configured", this->integratorname_.c_str());
 
+	// Getting threshold parameters
+	if(this->p_nh_.param<std::vector<float>>("thresholds", this->thresholds_, {}) == false) {
+		ROS_WARN("[%s] Integrator working without thresholds", this->integrator_->name().c_str());
+		this->has_thresholds_ = false;
+	}
+
 	// Subscriber and publisher
 	this->sub_ = this->nh_.subscribe("/smr/neuroprediction", 1, &Integrator::on_received_neurodata, this);
 	this->pub_ = this->p_nh_.advertise<rosneuro_msgs::NeuroOutput>("/integrated", 1);
@@ -62,6 +69,7 @@ void Integrator::run(void) {
 
 			this->pub_.publish(this->neurooutput_);	
 			this->has_new_data_ = false;
+
 		}
 
 		ros::spinOnce();
@@ -85,6 +93,12 @@ void Integrator::on_received_neurodata(const rosneuro_msgs::NeuroOutput& msg) {
 	this->neurooutput_.decoder_path = msg.decoder_path;
 
 	this->has_new_data_ = true;
+
+	// Check if a reset is needed
+	if(this->is_over_threshold(output) == true) {
+		this->integrator_->reset();
+		ROS_INFO("[%s] Value over thresholds: integrator has been reset", this->integrator_->name().c_str());
+	}
 }
 
 bool Integrator::on_reset_integrator(std_srvs::Empty::Request& req,
@@ -118,6 +132,25 @@ std::vector<float> Integrator::eigen_to_vector(const Eigen::VectorXf& in) {
 
 	return out;
 
+}
+
+bool Integrator::is_over_threshold(const Eigen::VectorXf& values) {
+
+	float maxvalue;
+	bool retcod = false;
+
+	if(this->has_thresholds_) {
+		maxvalue = values.maxCoeff();	
+
+		for(auto it=this->thresholds_.begin(); it!=this->thresholds_.end(); ++it) {
+			if( maxvalue >= *it ) {
+				retcod = true;
+				break;
+			}
+		}
+	}
+
+	return retcod;
 }
 
 
