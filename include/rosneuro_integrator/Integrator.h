@@ -7,6 +7,7 @@
 #include <std_srvs/Empty.h>
 #include <pluginlib/class_loader.h>
 #include <rosneuro_msgs/NeuroOutput.h>
+#include <rosneuro_msgs/NeuroEvent.h>
 #include "rosneuro_integrator/GenericIntegrator.h"
 
 
@@ -22,11 +23,12 @@ class Integrator {
 		void run(void);
 
 	private:
-		void on_received_neurodata(const rosneuro_msgs::NeuroOutput& msg);
+		void on_received_neurooutput(const rosneuro_msgs::NeuroOutput& msg);
+		void on_received_neuroevent(const rosneuro_msgs::NeuroEvent& msg);
 		bool on_reset_integrator(std_srvs::Empty::Request& req,
 							 	 std_srvs::Empty::Response& res);
 
-
+		bool reset_integrator_state(void);
 
 	private:
 		Eigen::VectorXf vector_to_eigen(const std::vector<float>& in);
@@ -36,13 +38,16 @@ class Integrator {
 	private:
 		ros::NodeHandle nh_;
 		ros::NodeHandle p_nh_;
-		ros::Subscriber	sub_;
-		ros::Publisher	pub_;
+		ros::Subscriber	subprd_;
+		ros::Subscriber	subevt_;
+		ros::Publisher	pubprd_;
 		ros::ServiceServer srv_reset_;
 		
 		rosneuro_msgs::NeuroOutput neurooutput_;
 		std::vector<float> thresholds_;
 
+		int  reset_event_;
+		const int reset_event_default_ = 781;
 		bool has_new_data_;
 		bool has_thresholds_;
 		
