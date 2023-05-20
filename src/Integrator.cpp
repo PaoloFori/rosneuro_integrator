@@ -51,6 +51,11 @@ bool Integrator::configure(void) {
 	this->p_nh_.param<int>("reset_event", this->reset_event_, this->reset_event_default_);
 	ROS_INFO("[%s] Reset event set to: %d", this->integrator_->name().c_str(), this->reset_event_);
 
+	// Getting reset on threshold flag
+	this->p_nh_.param<bool>("reset_on_threshold", this->reset_on_threshold_, true);
+	ROS_INFO("[%s] Reset on threshold flag set to: %d", this->integrator_->name().c_str(), this->reset_on_threshold_);
+
+
 	// Subscriber and publisher
 	this->subprd_ = this->nh_.subscribe("/smr/neuroprediction", 1, &Integrator::on_received_neurooutput, this);
 	this->subevt_ = this->nh_.subscribe("/events/bus", 1, &Integrator::on_received_neuroevent, this);
@@ -100,13 +105,13 @@ void Integrator::on_received_neurooutput(const rosneuro_msgs::NeuroOutput& msg) 
 	this->has_new_data_ = true;
 
 	// Check if a reset is needed
-	if(this->is_over_threshold(output) == true) {
+	if(this->is_over_threshold(output) == true && this->reset_on_threshold_ == true) {
 		this->integrator_->reset();
 		ROS_INFO("[%s] Value over thresholds: integrator has been reset", this->integrator_->name().c_str());
 	}
 }
 
-bool Integrator::reset_integrator_state(void) {
+bool Integrator::reset_integrator(void) {
 
 	if(this->integrator_->reset() == false) {
 		ROS_WARN("[%s] Integrator has not been reset", this->integrator_->name().c_str());
@@ -121,14 +126,14 @@ bool Integrator::reset_integrator_state(void) {
 void Integrator::on_received_neuroevent(const rosneuro_msgs::NeuroEvent& msg) {
 
 	if(msg.event == this->reset_event_) {
-		this->reset_integrator_state();
+		this->reset_integrator();
 	}
 }
 
 bool Integrator::on_reset_integrator(std_srvs::Empty::Request& req,
 									 std_srvs::Empty::Response& res) {
 
-	return this->reset_integrator_state();
+	return this->reset_integrator();
 }
 
 Eigen::VectorXf Integrator::vector_to_eigen(const std::vector<float>& in) {

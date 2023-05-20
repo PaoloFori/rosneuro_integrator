@@ -28,7 +28,7 @@ class Integrator {
 		bool on_reset_integrator(std_srvs::Empty::Request& req,
 							 	 std_srvs::Empty::Response& res);
 
-		bool reset_integrator_state(void);
+		bool reset_integrator(void);
 
 	private:
 		Eigen::VectorXf vector_to_eigen(const std::vector<float>& in);
@@ -50,6 +50,7 @@ class Integrator {
 		const int reset_event_default_ = 781;
 		bool has_new_data_;
 		bool has_thresholds_;
+		bool reset_on_threshold_;
 		
 		std::string plugin_;
 		std::string integratorname_;
