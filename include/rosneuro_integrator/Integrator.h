@@ -12,6 +12,7 @@
 
 
 namespace rosneuro {
+	namespace integrator {
 
 class Integrator {
 	
@@ -23,8 +24,8 @@ class Integrator {
 		void run(void);
 
 	private:
-		void on_received_neurooutput(const rosneuro_msgs::NeuroOutput& msg);
-		void on_received_neuroevent(const rosneuro_msgs::NeuroEvent& msg);
+		void on_received_data(const rosneuro_msgs::NeuroOutput& msg);
+		void on_received_event(const rosneuro_msgs::NeuroEvent& msg);
 		bool on_reset_integrator(std_srvs::Empty::Request& req,
 							 	 std_srvs::Empty::Response& res);
 
@@ -34,23 +35,25 @@ class Integrator {
 		Eigen::VectorXf vector_to_eigen(const std::vector<float>& in);
 		std::vector<float> eigen_to_vector(const Eigen::VectorXf& in);
 		bool is_over_threshold(const Eigen::VectorXf& values);
+		void set_message(const Eigen::VectorXf& data);
 
 	private:
 		ros::NodeHandle nh_;
 		ros::NodeHandle p_nh_;
-		ros::Subscriber	subprd_;
+		ros::Subscriber	sub_;
+		ros::Publisher	pub_;
 		ros::Subscriber	subevt_;
-		ros::Publisher	pubprd_;
 		ros::ServiceServer srv_reset_;
-		
-		rosneuro_msgs::NeuroOutput neurooutput_;
-		std::vector<float> thresholds_;
+	
+		Eigen::VectorXf input_;
+		Eigen::VectorXf output_;
+
+		rosneuro_msgs::NeuroOutput msgoutput_;
 
 		int  reset_event_;
 		const int reset_event_default_ = 781;
 		bool has_new_data_;
-		bool has_thresholds_;
-		bool reset_on_threshold_;
+		bool is_first_message_;
 		
 		std::string plugin_;
 		std::string integratorname_;
@@ -63,7 +66,7 @@ class Integrator {
 
 };
 
-
+	}
 }
 
 #endif

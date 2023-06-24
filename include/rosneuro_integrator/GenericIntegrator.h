@@ -5,7 +5,7 @@
 #include <ros/ros.h>
 
 namespace rosneuro {
-
+	namespace integrator {
 
 class GenericIntegrator {
 
@@ -25,6 +25,7 @@ class GenericIntegrator {
 
 };
 
+	}
 
 }
 

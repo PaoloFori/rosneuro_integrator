@@ -5,7 +5,7 @@ int main(int argc, char** argv) {
 
 	ros::init(argc, argv, "integrator");
 
-	rosneuro::Integrator integrator;
+	rosneuro::integrator::Integrator integrator;
 
 	if(integrator.configure() == false) {
 		ROS_ERROR("[integrator] Configuration failed");
