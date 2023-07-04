@@ -6,6 +6,7 @@
 #include <ros/ros.h>
 #include <std_srvs/Empty.h>
 #include <pluginlib/class_loader.h>
+
 #include <rosneuro_msgs/NeuroOutput.h>
 #include <rosneuro_msgs/NeuroEvent.h>
 #include "rosneuro_integrator/GenericIntegrator.h"
@@ -61,8 +62,6 @@ class Integrator {
 		boost::shared_ptr<GenericIntegrator> 	integrator_;
 
 		std::unique_ptr<pluginlib::ClassLoader<GenericIntegrator>> loader_;
-
-
 
 };
 

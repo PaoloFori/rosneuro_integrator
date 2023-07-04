@@ -80,15 +80,18 @@ void Integrator::run(void) {
 }
 
 void Integrator::on_received_data(const rosneuro_msgs::NeuroOutput& msg) {
+
 	this->input_  = this->vector_to_eigen(msg.softpredict.data);
 	this->output_ = this->integrator_->apply(this->input_);
 	this->has_new_data_ = true;
+
+	this->msgoutput_.neuroheader = msg.neuroheader;
 	
 	if(this->is_first_message_ == true) {
 		this->msgoutput_.hardpredict.data = msg.hardpredict.data;
-		this->msgoutput_.class_labels 	  = msg.class_labels;
-		this->msgoutput_.decoder_type 	  = msg.decoder_type;
-		this->msgoutput_.decoder_path 	  = msg.decoder_path;
+		this->msgoutput_.decoder.classes  = msg.decoder.classes;
+		this->msgoutput_.decoder.type 	  = msg.decoder.type;
+		this->msgoutput_.decoder.path 	  = msg.decoder.path;
 		this->is_first_message_ = false;
 	}
 }
@@ -154,6 +157,9 @@ std::vector<float> Integrator::eigen_to_vector(const Eigen::VectorXf& in) {
 	return out;
 
 }
+
+
+
 
 }
 
