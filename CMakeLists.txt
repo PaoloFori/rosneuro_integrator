@@ -35,6 +35,17 @@ catkin_package(
   DEPENDS
 )
 
+##############################################################################
+# TEST
+##############################################################################
+
+catkin_add_gtest(TestIntegrator test/TestIntegrator.cpp)
+target_link_libraries(TestIntegrator ${GTEST_BOTH_LIBRARIES} pthread gmock)
+target_link_libraries(TestIntegrator ${PROJECT_NAME} ${catkin_LIBRARIES})
+
+catkin_add_gtest(TestGenericIntegrator test/TestGenericIntegrator.cpp)
+target_link_libraries(TestGenericIntegrator ${GTEST_BOTH_LIBRARIES} pthread gmock)
+target_link_libraries(TestGenericIntegrator ${PROJECT_NAME} ${catkin_LIBRARIES})
 
 ##############################################################################
 # Build
@@ -56,7 +67,7 @@ add_dependencies(${PROJECT_NAME}
 				 ${catkin_EXPORTED_TARGETS}
 )
 
-add_executable(integrator src/integrator.cpp)
+add_executable(integrator example/run.cpp)
 target_link_libraries(integrator ${PROJECT_NAME} ${catkin_LIBRARIES}) 
 
 

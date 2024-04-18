@@ -2,165 +2,119 @@
 
 namespace rosneuro {
 	namespace integrator {
+        Integrator::Integrator(void) : p_nh_("~") {
+            this->has_new_data_     = false;
+            this->is_first_message_ = true;
+            this->loader_.reset(new pluginlib::ClassLoader<GenericIntegrator>("rosneuro_integrator", "rosneuro::integrator::GenericIntegrator"));
+        }
 
-Integrator::Integrator(void) : p_nh_("~") {
+        Integrator::~Integrator(void) {
+            boost::shared_ptr<GenericIntegrator>().swap(this->integrator_);
+            this->loader_.reset();
+        }
 
-	this->has_new_data_     = false;
-	this->is_first_message_ = true;
+        bool Integrator::configure(void) {
+            std::string  plugin;
+            if(!ros::param::get("~plugin", this->plugin_)) {
+                ROS_ERROR("[integrator] Missing 'plugin' in the server. 'plugin' is a mandatory parameter");
+                return false;
+            }
 
-	this->loader_.reset(new pluginlib::ClassLoader<GenericIntegrator>("rosneuro_integrator", "rosneuro::integrator::GenericIntegrator"));
+            try {
+                this->integrator_ = this->loader_->createInstance(this->plugin_);
+            } catch (pluginlib::PluginlibException& ex) {
+                ROS_ERROR("[integrator] '%s' plugin failed to load: %s", this->plugin_.c_str(), ex.what());
+            }
 
-}
+            this->integrator_name_ = this->integrator_->name();
 
-Integrator::~Integrator(void) {
-	boost::shared_ptr<GenericIntegrator>().swap(this->integrator_);
-	this->loader_.reset();
-}
+            if(!this->integrator_->configure()) {
+                ROS_ERROR("[%s] Cannot configure the integrator", this->integrator_name_.c_str());
+                return false;
+            }
+            ROS_INFO("[%s] Integrator correctly created and configured", this->integrator_name_.c_str());
 
-bool Integrator::configure(void) {
+            this->p_nh_.param<int>("reset_event", this->reset_event_, this->reset_event_default_);
+            ROS_INFO("[%s] Reset event set to: %d", this->integrator_->name().c_str(), this->reset_event_);
 
-	std::string  plugin;
+            this->sub_ = this->nh_.subscribe("/smr/neuroprediction", 1, &Integrator::onReceivedData, this);
+            this->pub_ = this->p_nh_.advertise<rosneuro_msgs::NeuroOutput>("/integrated", 1);
+            this->sub_event_ = this->nh_.subscribe("/events/bus", 1, &Integrator::onReceivedEvent, this);
+            this->srv_reset_ = this->p_nh_.advertiseService("reset", &Integrator::onResetIntegrator, this);
 
-	// Getting mandatory parameters from ROS
-	if(ros::param::get("~plugin", this->plugin_) == false) {
-		ROS_ERROR("[integrator] Missing 'plugin' in the server. 'plugin' is a mandatory parameter");
-		return false;
-	}
-	
-	// Dynamically load the plugin
-	try {
-		this->integrator_ = this->loader_->createInstance(this->plugin_);
-	} catch (pluginlib::PluginlibException& ex) {
-		ROS_ERROR("[integrator] '%s' plugin failed to load: %s", this->plugin_.c_str(), ex.what());
-	}
+            return true;
+        }
 
-	this->integratorname_ = this->integrator_->name();
+        void Integrator::run(void) {
+            ros::Rate r(512);
+            rosneuro_msgs::NeuroOutput msg;
+            while(ros::ok()) {
+                if(this->has_new_data_) {
+                    this->setMessage(this->output_);
+                    this->pub_.publish(this->msgoutput_);
+                    this->has_new_data_ = false;
+                }
+                ros::spinOnce();
+                r.sleep();
+            }
+        }
 
-	if(this->integrator_->configure() == false) {
-		ROS_ERROR("[%s] Cannot configure the integrator", this->integratorname_.c_str());
-		return false;
-	}
-	ROS_INFO("[%s] Integrator correctly created and configured", this->integratorname_.c_str());
+        void Integrator::onReceivedData(const rosneuro_msgs::NeuroOutput& msg) {
+            this->input_  = this->vectorToEigen(msg.softpredict.data);
+            this->output_ = this->integrator_->apply(this->input_);
+            this->has_new_data_ = true;
+            this->msgoutput_.neuroheader = msg.neuroheader;
 
-	// Getting reset event value
-	this->p_nh_.param<int>("reset_event", this->reset_event_, this->reset_event_default_);
-	ROS_INFO("[%s] Reset event set to: %d", this->integrator_->name().c_str(), this->reset_event_);
+            if(this->is_first_message_) {
+                this->msgoutput_.hardpredict.data = msg.hardpredict.data;
+                this->msgoutput_.decoder.classes  = msg.decoder.classes;
+                this->msgoutput_.decoder.type 	  = msg.decoder.type;
+                this->msgoutput_.decoder.path 	  = msg.decoder.path;
+                this->is_first_message_ = false;
+            }
+        }
 
-	// Subscribers and publishers
-	this->sub_ = this->nh_.subscribe("/smr/neuroprediction", 1, &Integrator::on_received_data, this);
-	this->pub_ = this->p_nh_.advertise<rosneuro_msgs::NeuroOutput>("/integrated", 1);
-	this->subevt_ = this->nh_.subscribe("/events/bus", 1, &Integrator::on_received_event, this);
+        void Integrator::setMessage(const Eigen::VectorXf& data) {
+            this->msgoutput_.header.stamp = ros::Time::now();
+            this->msgoutput_.softpredict.data = this->eigenToVector(data);
+        }
 
-	// Services
-	this->srv_reset_ = this->p_nh_.advertiseService("reset", &Integrator::on_reset_integrator, this);
+        bool Integrator::resetIntegrator(void) {
+            if(!this->integrator_->reset()) {
+                ROS_WARN("[%s] Integrator has not been reset", this->integrator_->name().c_str());
+                return false;
+            }
+            ROS_INFO("[%s] Integrator has been reset", this->integrator_->name().c_str());
+            ros::spinOnce();
+            this->output_ = Eigen::VectorXf::Constant(this->output_.rows(),
+                                                      this->output_.cols(),
+                                                      1.0f/this->output_.size());
+            this->setMessage(this->output_);
+            this->pub_.publish(this->msgoutput_);
+            this->has_new_data_ = false;
+            return true;
+        }
 
-	return true;
-}
+        void Integrator::onReceivedEvent(const rosneuro_msgs::NeuroEvent& msg) {
+            if(msg.event == this->reset_event_) {
+                this->resetIntegrator();
+            }
+        }
 
-void Integrator::run(void) {
+        bool Integrator::onResetIntegrator(std_srvs::Empty::Request& req,
+                                             std_srvs::Empty::Response& res) {
+            return this->resetIntegrator();
+        }
 
-	ros::Rate r(512);
+        Eigen::VectorXf Integrator::vectorToEigen(const std::vector<float>& in) {
+            float* ptr_in = const_cast<float*>(in.data());
+            return Eigen::Map<Eigen::VectorXf>(ptr_in, in.size());
+        }
 
-	rosneuro_msgs::NeuroOutput msg;
-
-	while(ros::ok()) {
-
-		if(this->has_new_data_ == true) {
-
-			this->set_message(this->output_);
-			this->pub_.publish(this->msgoutput_);
-			this->has_new_data_ = false;
-
-		}
-
-		ros::spinOnce();
-		r.sleep();
-
-	}
-}
-
-void Integrator::on_received_data(const rosneuro_msgs::NeuroOutput& msg) {
-
-	this->input_  = this->vector_to_eigen(msg.softpredict.data);
-	this->output_ = this->integrator_->apply(this->input_);
-	this->has_new_data_ = true;
-
-	this->msgoutput_.neuroheader = msg.neuroheader;
-	
-	if(this->is_first_message_ == true) {
-		this->msgoutput_.hardpredict.data = msg.hardpredict.data;
-		this->msgoutput_.decoder.classes  = msg.decoder.classes;
-		this->msgoutput_.decoder.type 	  = msg.decoder.type;
-		this->msgoutput_.decoder.path 	  = msg.decoder.path;
-		this->is_first_message_ = false;
-	}
-}
-
-void Integrator::set_message(const Eigen::VectorXf& data) {
-	this->msgoutput_.header.stamp = ros::Time::now();
-	this->msgoutput_.softpredict.data = this->eigen_to_vector(data);
-}
-
-bool Integrator::reset_integrator(void) {
-
-	if(this->integrator_->reset() == false) {
-		ROS_WARN("[%s] Integrator has not been reset", this->integrator_->name().c_str());
-		return false;
-	}
-	ROS_INFO("[%s] Integrator has been reset", this->integrator_->name().c_str());
-
-	// Consuming old messages
-	ros::spinOnce();
-	
-	// Publish current reset output
-	this->output_ = Eigen::VectorXf::Constant(this->output_.rows(), 
-											  this->output_.cols(), 
-											  1.0f/this->output_.size());
-	this->set_message(this->output_);
-	this->pub_.publish(this->msgoutput_);
-	this->has_new_data_ = false;
-
-	return true;
-}
-
-
-void Integrator::on_received_event(const rosneuro_msgs::NeuroEvent& msg) {
-
-	if(msg.event == this->reset_event_) {
-		this->reset_integrator();
-	}
-}
-
-bool Integrator::on_reset_integrator(std_srvs::Empty::Request& req,
-									 std_srvs::Empty::Response& res) {
-
-	return this->reset_integrator();
-}
-
-Eigen::VectorXf Integrator::vector_to_eigen(const std::vector<float>& in) {
-
-	float* ptr_in;
-
-	ptr_in = const_cast<float*>(in.data());
-
-	Eigen::VectorXf out = Eigen::Map<Eigen::VectorXf>(ptr_in, in.size());
-
-	return out;
-}
-
-std::vector<float> Integrator::eigen_to_vector(const Eigen::VectorXf& in) {
-
-	std::vector<float> out(in.size());
-
-	Eigen::Map<Eigen::VectorXf>(out.data(), in.size()) = in;
-
-	return out;
-
-}
-
-
-
-
-}
-
+        std::vector<float> Integrator::eigenToVector(const Eigen::VectorXf& in) {
+            std::vector<float> out(in.size());
+            Eigen::Map<Eigen::VectorXf>(out.data(), in.size()) = in;
+            return out;
+        }
+    }
 }

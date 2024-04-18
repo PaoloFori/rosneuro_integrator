@@ -2,21 +2,18 @@
 
 namespace rosneuro {
 	namespace integrator {
+        GenericIntegrator::GenericIntegrator(void) {
+            this->name_ = "undefined";
+        }
 
-GenericIntegrator::GenericIntegrator(void) {
-	this->name_ = "undefined";
-}
+        GenericIntegrator::~GenericIntegrator(void) {}
 
-GenericIntegrator::~GenericIntegrator(void) {}
+        std::string GenericIntegrator::name(void) {
+            return this->name_;
+        }
 
-std::string GenericIntegrator::name(void) {
-	return this->name_;
-}
-
-void GenericIntegrator::setname(const std::string& name) {
-	this->name_ = name;
-}
-
+        void GenericIntegrator::setName(const std::string& name) {
+            this->name_ = name;
+        }
 	}
-
 }
