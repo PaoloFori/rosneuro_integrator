@@ -6,28 +6,23 @@
 
 namespace rosneuro {
 	namespace integrator {
+        class GenericIntegrator {
 
-class GenericIntegrator {
+            public:
+                GenericIntegrator(void);
+                virtual ~GenericIntegrator(void);
 
-	public:
-		GenericIntegrator(void);
-		virtual ~GenericIntegrator(void);
+                virtual bool configure(void) = 0;
+                virtual Eigen::VectorXf apply(const Eigen::VectorXf& in) = 0;
+                virtual bool reset(void) = 0;
 
-		virtual bool configure(void) = 0;
-		virtual Eigen::VectorXf apply(const Eigen::VectorXf& in) = 0;
-		virtual bool reset(void) = 0;
+                std::string name(void);
+                void setName(const std::string& name);
 
-		std::string name(void);
-		void setname(const std::string& name);
-
-	private:
-		std::string name_;
-
-};
-
+            private:
+                std::string name_;
+        };
 	}
-
 }
-
 
 #endif
