@@ -21,6 +21,9 @@ namespace rosneuro {
                 bool configure(void);
                 void run(void);
 
+            protected:
+                virtual boost::shared_ptr<GenericIntegrator> setIntegrator(void);
+
             private:
                 void onReceivedData(const rosneuro_msgs::NeuroOutput& msg);
                 void onReceivedEvent(const rosneuro_msgs::NeuroEvent& msg);
@@ -34,28 +37,22 @@ namespace rosneuro {
                 void subscribeAdvertiseServices(void);
                 bool loadPlugin(void);
 
-                ros::NodeHandle nh_;
-                ros::NodeHandle p_nh_;
-                ros::Subscriber	sub_;
+                ros::NodeHandle nh_, p_nh_;
+                ros::Subscriber	sub_, sub_event_;
                 ros::Publisher	pub_;
-                ros::Subscriber	sub_event_;
                 ros::ServiceServer srv_reset_;
 
-                Eigen::VectorXf input_;
-                Eigen::VectorXf output_;
+                Eigen::VectorXf input_, output_;
 
                 rosneuro_msgs::NeuroOutput msgoutput_;
 
                 int  reset_event_;
                 const int reset_event_default_ = 781;
-                bool has_new_data_;
-                bool is_first_message_;
+                bool has_new_data_, is_first_message_;
 
-                std::string plugin_;
-                std::string integrator_name_;
+                std::string plugin_, integrator_name_;
 
                 boost::shared_ptr<GenericIntegrator> integrator_;
-
                 std::unique_ptr<pluginlib::ClassLoader<GenericIntegrator>> loader_;
 
                 FRIEND_TEST(TestIntegratorSuite, TestConstructor);

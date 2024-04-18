@@ -40,12 +40,17 @@ namespace rosneuro {
 
         bool Integrator::loadPlugin(void) {
             try {
-                this->integrator_ = this->loader_->createInstance(this->plugin_);
+                this->integrator_ = this->setIntegrator();
             } catch (pluginlib::PluginlibException& ex) {
                 ROS_ERROR("[integrator] '%s' plugin failed to load: %s", this->plugin_.c_str(), ex.what());
+                std::cout << ex.what() << std::endl;
                 return false;
             }
             return true;
+        }
+
+        boost::shared_ptr<GenericIntegrator> Integrator::setIntegrator(void) {
+            return this->loader_->createInstance(this->plugin_);
         }
 
         void Integrator::subscribeAdvertiseServices(void){

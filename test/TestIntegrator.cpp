@@ -3,10 +3,28 @@
 
 namespace rosneuro {
     namespace integrator {
-        class TestGenericIntegrator : public Integrator {
+        class TestGenericIntegrator : public GenericIntegrator {
             public:
-                TestGenericIntegrator() : Integrator() {}
+                TestGenericIntegrator() : GenericIntegrator() {}
                 ~TestGenericIntegrator() {}
+                bool configure(void) {
+                    return true;
+                }
+                Eigen::VectorXf apply(const Eigen::VectorXf& in) {
+                    return in;
+                }
+                bool reset(void) {
+                    return true;
+                }
+        };
+
+        class TestIntegrator : public Integrator {
+            public:
+                TestIntegrator() : Integrator() {}
+                ~TestIntegrator() {}
+                boost::shared_ptr<GenericIntegrator> setIntegrator(void) override {
+                    return boost::shared_ptr<GenericIntegrator>(new TestGenericIntegrator());
+                }
         };
 
         class TestIntegratorSuite : public ::testing::Test {
@@ -14,14 +32,14 @@ namespace rosneuro {
                 TestIntegratorSuite() {}
                 ~TestIntegratorSuite() {}
                 void SetUp() {
-                    integrator = new TestGenericIntegrator();
+                    integrator = new TestIntegrator();
                 }
                 void TearDown() {
                     ros::param::del("~plugin");
                     delete integrator;
                 }
-                TestGenericIntegrator* integrator;
-                std::string integrator_plugin = "rosneuro::integrator::Exponential";
+                TestIntegrator* integrator;
+                std::string integrator_plugin = "test";
         };
 
 
