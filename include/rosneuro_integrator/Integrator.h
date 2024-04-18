@@ -14,7 +14,6 @@
 namespace rosneuro {
 	namespace integrator {
         class Integrator {
-
             public:
                 Integrator(void);
                 ~Integrator(void);
@@ -32,6 +31,8 @@ namespace rosneuro {
                 std::vector<float> eigenToVector(const Eigen::VectorXf& in);
                 bool isOverThreshold(const Eigen::VectorXf& values);
                 void setMessage(const Eigen::VectorXf& data);
+                void subscribeAdvertiseServices(void);
+                bool loadPlugin(void);
 
                 ros::NodeHandle nh_;
                 ros::NodeHandle p_nh_;

@@ -14,17 +14,12 @@ namespace rosneuro {
         }
 
         bool Integrator::configure(void) {
-            std::string  plugin;
             if(!ros::param::get("~plugin", this->plugin_)) {
                 ROS_ERROR("[integrator] Missing 'plugin' in the server. 'plugin' is a mandatory parameter");
                 return false;
             }
 
-            try {
-                this->integrator_ = this->loader_->createInstance(this->plugin_);
-            } catch (pluginlib::PluginlibException& ex) {
-                ROS_ERROR("[integrator] '%s' plugin failed to load: %s", this->plugin_.c_str(), ex.what());
-            }
+            if(!this->loadPlugin()) return false;
 
             this->integrator_name_ = this->integrator_->name();
 
@@ -32,17 +27,32 @@ namespace rosneuro {
                 ROS_ERROR("[%s] Cannot configure the integrator", this->integrator_name_.c_str());
                 return false;
             }
+
             ROS_INFO("[%s] Integrator correctly created and configured", this->integrator_name_.c_str());
 
             this->p_nh_.param<int>("reset_event", this->reset_event_, this->reset_event_default_);
             ROS_INFO("[%s] Reset event set to: %d", this->integrator_->name().c_str(), this->reset_event_);
 
+            this->subscribeAdvertiseServices();
+
+            return true;
+        }
+
+        bool Integrator::loadPlugin(void) {
+            try {
+                this->integrator_ = this->loader_->createInstance(this->plugin_);
+            } catch (pluginlib::PluginlibException& ex) {
+                ROS_ERROR("[integrator] '%s' plugin failed to load: %s", this->plugin_.c_str(), ex.what());
+                return false;
+            }
+            return true;
+        }
+
+        void Integrator::subscribeAdvertiseServices(void){
             this->sub_ = this->nh_.subscribe("/smr/neuroprediction", 1, &Integrator::onReceivedData, this);
             this->pub_ = this->p_nh_.advertise<rosneuro_msgs::NeuroOutput>("/integrated", 1);
             this->sub_event_ = this->nh_.subscribe("/events/bus", 1, &Integrator::onReceivedEvent, this);
             this->srv_reset_ = this->p_nh_.advertiseService("reset", &Integrator::onResetIntegrator, this);
-
-            return true;
         }
 
         void Integrator::run(void) {
