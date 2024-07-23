@@ -54,8 +54,8 @@ namespace rosneuro {
         }
 
         void Integrator::subscribeAdvertiseServices(void){
-            this->sub_ = this->nh_.subscribe("/smr/neuroprediction/raw", 1, &Integrator::onReceivedData, this);
-            this->pub_ = this->nh_.advertise<rosneuro_msgs::NeuroOutput>("/smr/neuroprediction/integrated", 1);
+            this->sub_ = this->nh_.subscribe("/cvsa/neuroprediction", 1, &Integrator::onReceivedData, this);
+            this->pub_ = this->nh_.advertise<rosneuro_msgs::NeuroOutput>("/cvsa/neuroprediction/integrated", 1);
             this->sub_event_ = this->nh_.subscribe("/events/bus", 1, &Integrator::onReceivedEvent, this);
             this->srv_reset_ = this->p_nh_.advertiseService("reset", &Integrator::onResetIntegrator, this);
         }
