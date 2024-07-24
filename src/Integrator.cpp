@@ -101,9 +101,8 @@ namespace rosneuro {
             }
             ROS_INFO("[%s] Integrator has been reset", this->integrator_->name().c_str());
             ros::spinOnce();
-            this->output_ = Eigen::VectorXf::Constant(this->output_.rows(),
-                                                      this->output_.cols(),
-                                                      1.0f/this->output_.size());
+            std::vector<float> initial_vals = this->integrator_->getInitVal();
+            this->output_ = this->vectorToEigen(initial_vals);
             this->setMessage(this->output_);
             this->pub_.publish(this->msgoutput_);
             this->has_new_data_ = false;
