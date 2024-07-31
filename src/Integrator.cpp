@@ -101,7 +101,7 @@ namespace rosneuro {
             }
             ROS_INFO("[%s] Integrator has been reset", this->integrator_->name().c_str());
             ros::spinOnce();
-            std::vector<float> initial_vals = this->integrator_->getInitVal();
+            std::vector<float> initial_vals = this->integrator_->getInitPrecentual(); ///////////
             this->output_ = this->vectorToEigen(initial_vals);
             this->setMessage(this->output_);
             this->pub_.publish(this->msgoutput_);
