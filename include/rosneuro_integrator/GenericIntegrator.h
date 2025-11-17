@@ -16,6 +16,7 @@ namespace rosneuro {
                 virtual Eigen::VectorXf apply(const Eigen::VectorXf& in) = 0;
                 virtual bool reset(void) = 0;
                 virtual std::vector<float> getInitPrecentual(void) = 0;
+                virtual Eigen::VectorXf getData(void) = 0;
 
                 std::string name(void);
                 void setName(const std::string& name);

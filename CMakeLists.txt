@@ -12,7 +12,8 @@ find_package(catkin REQUIRED COMPONENTS
 			 roscpp 
 			 std_msgs
 			 pluginlib
-			 rosneuro_msgs)
+			 rosneuro_msgs
+			 artifacts_cvsa)
 
 find_package(Eigen3 REQUIRED)
 
@@ -32,6 +33,7 @@ catkin_package(
 	std_msgs
 	pluginlib
 	rosneuro_msgs
+	artifacts_cvsa
   DEPENDS
 )
 
@@ -67,7 +69,7 @@ add_dependencies(${PROJECT_NAME}
 				 ${catkin_EXPORTED_TARGETS}
 )
 
-add_executable(integrator example/run.cpp)
+add_executable(integrator src/integrator.cpp)
 target_link_libraries(integrator ${PROJECT_NAME} ${catkin_LIBRARIES}) 
 
 

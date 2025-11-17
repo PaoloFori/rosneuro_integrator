@@ -2,6 +2,8 @@
 #define ROSNEURO_INTEGRATORS_INTEGRATOR_H_
 
 #include <memory>
+#include <map>
+#include <mutex>
 #include <Eigen/Dense>
 #include <ros/ros.h>
 #include <std_srvs/Empty.h>
@@ -9,11 +11,20 @@
 #include <gtest/gtest_prod.h>
 #include <rosneuro_msgs/NeuroOutput.h>
 #include <rosneuro_msgs/NeuroEvent.h>
+#include "artifacts_cvsa/artifact_presence.h"
 #include "rosneuro_integrator/GenericIntegrator.h"
 
 namespace rosneuro {
 	namespace integrator {
         class Integrator {
+            struct MessageSet{
+                ros::Time timestamp;
+                std::shared_ptr<rosneuro_msgs::NeuroOutput> msg_icnic;
+                std::shared_ptr<rosneuro_msgs::NeuroOutput> msg_classifier;
+                std::shared_ptr<artifacts_cvsa::artifact_presence> msg_artifact;
+
+                MessageSet() : msg_icnic(nullptr), msg_classifier(nullptr), msg_artifact(nullptr) {}
+            };
             public:
                 Integrator(void);
                 ~Integrator(void);
@@ -25,7 +36,9 @@ namespace rosneuro {
                 virtual boost::shared_ptr<GenericIntegrator> setIntegrator(void);
 
             private:
-                void onReceivedData(const rosneuro_msgs::NeuroOutput& msg);
+                void onReceivedData_classifier(const rosneuro_msgs::NeuroOutput& msg);
+                void onReceivedData_icnic(const rosneuro_msgs::NeuroOutput& msg);
+                void onReceivedData_artifacts(const artifacts_cvsa::artifact_presence& msg);
                 void onReceivedEvent(const rosneuro_msgs::NeuroEvent& msg);
                 bool onResetIntegrator(std_srvs::Empty::Request& req,
                                        std_srvs::Empty::Response& res);
@@ -36,19 +49,28 @@ namespace rosneuro {
                 void setMessage(const Eigen::VectorXf& data);
                 void subscribeAdvertiseServices(void);
                 bool loadPlugin(void);
+                void pruneBuffer(const ros::TimerEvent& event);
+                void integrateSyncData(const rosneuro_msgs::NeuroOutput& msg_icnic, 
+                                       const rosneuro_msgs::NeuroOutput& msg_classifier, 
+                                       const artifacts_cvsa::artifact_presence& msg_artifact);
 
                 ros::NodeHandle nh_, p_nh_;
-                ros::Subscriber	sub_, sub_event_;
+                ros::Subscriber	sub_icnic_, sub_classifier_, sub_artifacts_, sub_event_;
                 ros::Publisher	pub_;
                 ros::ServiceServer srv_reset_;
 
-                Eigen::VectorXf input_, output_;
-
                 rosneuro_msgs::NeuroOutput msgoutput_;
 
-                int  reset_event_;
+                int  reset_event_, ic_class_;
                 const int reset_event_default_ = 781;
-                bool has_new_data_, is_first_message_;
+                const int ic_class_default_ = 1;
+                float ic_threshold_;
+
+                // for the data synchronization
+                ros::Timer prune_timer_;
+                ros::Duration max_age_;
+                std::map<uint32_t, MessageSet> buffer_; 
+                std::mutex buffer_mutex_;
 
                 std::string plugin_, integrator_name_;
 
