@@ -31,8 +31,8 @@ namespace rosneuro {
             this->p_nh_.param<int>("reset_event", this->reset_event_, this->reset_event_default_);
             ROS_INFO("[%s] Reset event set to: %d", this->integrator_->name().c_str(), this->reset_event_);
 
-            this->p_nh_.param<int>("ic_class", this->ic_class_, this->ic_class_default_);
-            ROS_INFO("[%s] ic_class set to: %d", this->integrator_->name().c_str(), this->ic_class_);
+            this->p_nh_.param<int>("ic_class_label", this->ic_class_label_, this->ic_class_default_);
+            ROS_INFO("[%s] ic_class_label set to: %d", this->integrator_->name().c_str(), this->ic_class_label_);
 
             this->p_nh_.param<float>("ic_threshold", this->ic_threshold_, 0.7);
             ROS_INFO("[%s] ic_threshold set to: %f", this->integrator_->name().c_str(), this->ic_threshold_);
@@ -169,18 +169,17 @@ namespace rosneuro {
                                const rosneuro_msgs::NeuroOutput& msg_classifier, 
                                const artifacts_cvsa::artifact_presence& msg_artifact){
             uint32_t seq_num = msg_icnic.neuroheader.seq; 
-            ROS_INFO("--- SET SINCRONIZZATO RICEVUTO (Seq: %u) ---", seq_num);
 
-            // find the index of the ic_class_ in the icnic message
+            // find the index of the ic_class_label_ in the icnic message
             int ic_index;
             auto it = std::find(msg_icnic.decoder.classes.begin(), 
                     msg_icnic.decoder.classes.end(), 
-                    this->ic_class_);
+                    this->ic_class_label_);
 
             if (it != msg_icnic.decoder.classes.end()){
                 ic_index = static_cast<int>(std::distance(msg_icnic.decoder.classes.begin(), it));
             }else{
-                ROS_ERROR("ic_class %d not found in icnic classes", this->ic_class_);
+                ROS_ERROR("[%s] ic_class_label %d not found in icnic classes", this->integrator_->name().c_str(), this->ic_class_label_);
                 return;
             }
 
@@ -195,7 +194,9 @@ namespace rosneuro {
                 output = this->integrator_->getData();
             }
 
-            this->setMessage(output);        
+            this->setMessage(output);
+            this->msgoutput_.neuroheader.seq = seq_num;
+            this->pub_.publish(this->msgoutput_);
         }
 
         void Integrator::pruneBuffer(const ros::TimerEvent& event){
@@ -204,7 +205,7 @@ namespace rosneuro {
 
             for (auto it = this->buffer_.begin(); it != this->buffer_.end(); /* nothing here */){
                 if ((now - it->second.timestamp) > this->max_age_){
-                    ROS_WARN("Removed seq %u from the buffer (timeout).", it->first);
+                    ROS_WARN("[%s] Removed seq %u from the buffer (timeout).", this->integrator_->name().c_str(), it->first);
                     it = this->buffer_.erase(it);
                 }
                 else{

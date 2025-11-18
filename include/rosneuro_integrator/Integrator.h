@@ -61,7 +61,7 @@ namespace rosneuro {
 
                 rosneuro_msgs::NeuroOutput msgoutput_;
 
-                int  reset_event_, ic_class_;
+                int  reset_event_, ic_class_label_;
                 const int reset_event_default_ = 781;
                 const int ic_class_default_ = 1;
                 float ic_threshold_;
