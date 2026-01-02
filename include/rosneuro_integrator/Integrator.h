@@ -11,7 +11,7 @@
 #include <gtest/gtest_prod.h>
 #include <rosneuro_msgs/NeuroOutput.h>
 #include <rosneuro_msgs/NeuroEvent.h>
-#include "artifacts_cvsa/artifact_presence.h"
+#include "artifacts_bci/artifact_presence.h"
 #include "rosneuro_integrator/GenericIntegrator.h"
 
 namespace rosneuro {
@@ -21,7 +21,7 @@ namespace rosneuro {
                 ros::Time timestamp;
                 std::shared_ptr<rosneuro_msgs::NeuroOutput> msg_icnic;
                 std::shared_ptr<rosneuro_msgs::NeuroOutput> msg_classifier;
-                std::shared_ptr<artifacts_cvsa::artifact_presence> msg_artifact;
+                std::shared_ptr<artifacts_bci::artifact_presence> msg_artifact;
 
                 MessageSet() : msg_icnic(nullptr), msg_classifier(nullptr), msg_artifact(nullptr) {}
             };
@@ -38,7 +38,7 @@ namespace rosneuro {
             private:
                 void onReceivedData_classifier(const rosneuro_msgs::NeuroOutput& msg);
                 void onReceivedData_icnic(const rosneuro_msgs::NeuroOutput& msg);
-                void onReceivedData_artifacts(const artifacts_cvsa::artifact_presence& msg);
+                void onReceivedData_artifacts(const artifacts_bci::artifact_presence& msg);
                 void onReceivedEvent(const rosneuro_msgs::NeuroEvent& msg);
                 bool onResetIntegrator(std_srvs::Empty::Request& req,
                                        std_srvs::Empty::Response& res);
@@ -52,7 +52,7 @@ namespace rosneuro {
                 void pruneBuffer(const ros::TimerEvent& event);
                 void integrateSyncData(const rosneuro_msgs::NeuroOutput& msg_icnic, 
                                        const rosneuro_msgs::NeuroOutput& msg_classifier, 
-                                       const artifacts_cvsa::artifact_presence& msg_artifact);
+                                       const artifacts_bci::artifact_presence& msg_artifact);
 
                 ros::NodeHandle nh_, p_nh_;
                 ros::Subscriber	sub_icnic_, sub_classifier_, sub_artifacts_, sub_event_;

@@ -107,7 +107,7 @@ namespace rosneuro {
             }
         }
 
-        void Integrator::onReceivedData_artifacts(const artifacts_cvsa::artifact_presence& msg_artifact) {
+        void Integrator::onReceivedData_artifacts(const artifacts_bci::artifact_presence& msg_artifact) {
             uint32_t seq = msg_artifact.seq;
             ros::Time now = ros::Time::now();
         
@@ -120,7 +120,7 @@ namespace rosneuro {
                 if (!entry.msg_icnic && !entry.msg_classifier && !entry.msg_artifact) {
                     entry.timestamp = now;
                 }
-                entry.msg_artifact = std::make_shared<artifacts_cvsa::artifact_presence>(msg_artifact);
+                entry.msg_artifact = std::make_shared<artifacts_bci::artifact_presence>(msg_artifact);
 
                 if (entry.msg_icnic && entry.msg_classifier && entry.msg_artifact){
                     set_is_complete = true;
@@ -167,7 +167,7 @@ namespace rosneuro {
 
         void Integrator::integrateSyncData(const rosneuro_msgs::NeuroOutput& msg_icnic, 
                                const rosneuro_msgs::NeuroOutput& msg_classifier, 
-                               const artifacts_cvsa::artifact_presence& msg_artifact){
+                               const artifacts_bci::artifact_presence& msg_artifact){
             uint32_t seq_num = msg_icnic.neuroheader.seq; 
 
             // find the index of the ic_class_label_ in the icnic message
