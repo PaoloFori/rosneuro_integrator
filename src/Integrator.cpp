@@ -196,6 +196,7 @@ namespace rosneuro {
 
             this->setMessage(output);
             this->msgoutput_.neuroheader.seq = seq_num;
+            this->msgoutput_.decoder.classes = msg_classifier.decoder.classes;
             this->pub_.publish(this->msgoutput_);
         }
 
