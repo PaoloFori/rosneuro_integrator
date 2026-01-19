@@ -188,7 +188,11 @@ namespace rosneuro {
             Eigen::VectorXf output;
             if(!msg_artifact.has_artifact && icnic_data[ic_index] >= this->ic_threshold_){
                 // no EOG, artifact and in IC state
-                output = this->integrator_->apply(this->vectorToEigen(msg_classifier.softpredict.data));
+                std::vector<float> merged_prob = msg_classifier.softpredict.data;
+                for(int i = 0; i < merged_prob.size(); i++){
+                    merged_prob[i] = (1.0 - icnic_data[ic_index])*0.5 + icnic_data[ic_index]*msg_classifier.softpredict.data[i];
+                }
+                output = this->integrator_->apply(this->vectorToEigen(merged_prob));
             }else{
                 // in NIC
                 output = this->integrator_->getData();
