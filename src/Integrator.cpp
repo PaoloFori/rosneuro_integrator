@@ -186,7 +186,7 @@ namespace rosneuro {
             // check if the classifier probability must be integrated or not
             Eigen::VectorXf icnic_data  = this->vectorToEigen(msg_icnic.softpredict.data);
             Eigen::VectorXf output;
-            if(!msg_artifact.has_artifact && icnic_data[ic_index] >= this->ic_threshold_){
+            if(!msg_artifact.has_artifact){
                 // no EOG, artifact and in IC state
                 std::vector<float> merged_prob = msg_classifier.softpredict.data;
                 for(int i = 0; i < merged_prob.size(); i++){
