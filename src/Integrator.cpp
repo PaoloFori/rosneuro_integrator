@@ -28,9 +28,6 @@ namespace rosneuro {
                 return false;
             }
 
-            this->p_nh_.param<int>("reset_event", this->reset_event_, this->reset_event_default_);
-            ROS_INFO("[%s] Reset event set to: %d", this->integrator_->name().c_str(), this->reset_event_);
-
             this->p_nh_.param<int>("ic_class_label", this->ic_class_label_, this->ic_class_default_);
             ROS_INFO("[%s] ic_class_label set to: %d", this->integrator_->name().c_str(), this->ic_class_label_);
 
@@ -63,10 +60,9 @@ namespace rosneuro {
             this->sub_icnic_ = this->nh_.subscribe("/cvsa/neuroprediction/icnic", 1, &Integrator::onReceivedData_icnic, this);
             this->sub_classifier_ = this->nh_.subscribe("/cvsa/neuroprediction/raw", 1, &Integrator::onReceivedData_classifier, this);
             this->sub_artifacts_ = this->nh_.subscribe("/cvsa/artifact_presence", 1, &Integrator::onReceivedData_artifacts, this);
-            this->sub_event_ = this->nh_.subscribe("/events/bus", 1, &Integrator::onReceivedEvent, this);
 
             this->pub_ = this->nh_.advertise<rosneuro_msgs::NeuroOutput>("/cvsa/neuroprediction/integrated", 1);
-            this->srv_reset_ = this->p_nh_.advertiseService("reset", &Integrator::onResetIntegrator, this);
+            this->srv_reset_ = this->nh_.advertiseService("/integrator/reset", &Integrator::onResetIntegrator, this);
         }
 
         void Integrator::run(void) {
@@ -237,14 +233,9 @@ namespace rosneuro {
             return true;
         }
 
-        void Integrator::onReceivedEvent(const rosneuro_msgs::NeuroEvent& msg) {
-            if(msg.event == this->reset_event_) {
-                this->resetIntegrator();
-            }
-        }
-
         bool Integrator::onResetIntegrator(std_srvs::Empty::Request& req,
                                              std_srvs::Empty::Response& res) {
+            ROS_INFO("[%s] Reset integrator service called", this->integrator_->name().c_str());
             return this->resetIntegrator();
         }
 

@@ -39,7 +39,6 @@ namespace rosneuro {
                 void onReceivedData_classifier(const rosneuro_msgs::NeuroOutput& msg);
                 void onReceivedData_icnic(const rosneuro_msgs::NeuroOutput& msg);
                 void onReceivedData_artifacts(const artifacts_bci::artifact_presence& msg);
-                void onReceivedEvent(const rosneuro_msgs::NeuroEvent& msg);
                 bool onResetIntegrator(std_srvs::Empty::Request& req,
                                        std_srvs::Empty::Response& res);
                 bool resetIntegrator(void);
@@ -55,14 +54,13 @@ namespace rosneuro {
                                        const artifacts_bci::artifact_presence& msg_artifact);
 
                 ros::NodeHandle nh_, p_nh_;
-                ros::Subscriber	sub_icnic_, sub_classifier_, sub_artifacts_, sub_event_;
+                ros::Subscriber	sub_icnic_, sub_classifier_, sub_artifacts_;
                 ros::Publisher	pub_;
                 ros::ServiceServer srv_reset_;
 
                 rosneuro_msgs::NeuroOutput msgoutput_;
 
-                int  reset_event_, ic_class_label_;
-                const int reset_event_default_ = 781;
+                int  ic_class_label_;
                 const int ic_class_default_ = 1;
                 float ic_threshold_;
 
