@@ -4,8 +4,7 @@ namespace rosneuro {
 	namespace integrator {
         Integrator::Integrator(void) : p_nh_("~") {
             this->loader_.reset(new pluginlib::ClassLoader<GenericIntegrator>("rosneuro_integrator", "rosneuro::integrator::GenericIntegrator"));
-            prune_timer_ = nh_.createTimer(ros::Duration(0.5), &Integrator::pruneBuffer, this);
-            this->max_age_ = ros::Duration(2.0); 
+            this->prune_timer_ = this->nh_.createTimer(ros::Duration(0.5), &Integrator::pruneBuffer, this);
         }
 
         Integrator::~Integrator(void) {
@@ -14,13 +13,14 @@ namespace rosneuro {
         }
 
         bool Integrator::configure(void) {
+            // load the plugin
             if(!ros::param::get("~plugin", this->plugin_)) {
                 ROS_ERROR("[integrator] Missing 'plugin' in the server. 'plugin' is a mandatory parameter");
                 return false;
             }
-
             if(!this->loadPlugin()) return false;
 
+            // configure the plugin
             this->integrator_name_ = this->integrator_->name();
 
             if(!this->integrator_->configure()) {
@@ -28,13 +28,38 @@ namespace rosneuro {
                 return false;
             }
 
-            this->p_nh_.param<int>("ic_class_label", this->ic_class_label_, this->ic_class_default_);
-            ROS_INFO("[%s] ic_class_label set to: %d", this->integrator_->name().c_str(), this->ic_class_label_);
+            // configure sincronization parameters
+            this->max_age_ = ros::Duration(1.0);
 
-            this->p_nh_.param<float>("ic_threshold", this->ic_threshold_, 0.7);
-            ROS_INFO("[%s] ic_threshold set to: %f", this->integrator_->name().c_str(), this->ic_threshold_);
+            // paradigm organization
+            if(this->p_nh_.getParam("paradigm", this->paradigm_) == false) {
+                ROS_ERROR("[%s] Parameter 'paradigm' is mandatory", this->integrator_name_.c_str());
+                return false;
+            }
 
-            this->subscribeAdvertiseServices();
+            if(this->paradigm_ == "hybrid"){
+                // cvsa, mi, artifacts
+                this->sub_cvsa_ = this->nh_.subscribe("/cvsa/neuroprediction/raw", 1, &Integrator::onReceivedData_cvsa, this);
+                this->sub_mi_ = this->nh_.subscribe("/mi/neuroprediction/raw", 1, &Integrator::onReceivedData_mi, this);
+            }else{
+                // cvsa/mi and artifacts
+                if(this->paradigm_ == "cvsa"){
+                    this->sub_cvsa_ = this->nh_.subscribe("/cvsa/neuroprediction/raw", 1, &Integrator::onReceivedData_cvsa, this);
+                }else if(this->paradigm_ == "mi"){
+                    this->sub_mi_ = this->nh_.subscribe("/mi/neuroprediction/raw", 1, &Integrator::onReceivedData_mi, this);
+                }else{
+                    ROS_ERROR("[%s] Unknown paradigm provided", this->integrator_name_.c_str());
+                    return false;
+                }
+            }
+            
+            std::string topic_pub = "/" + this->paradigm_ + "/neuroprediction/integrated/raw";
+            this->pub_ = this->nh_.advertise<rosneuro_msgs::NeuroOutput>(topic_pub, 1);
+
+            this->sub_artifacts_ = this->nh_.subscribe("/artifact_presence", 1, &Integrator::onReceivedData_artifacts, this);
+
+            this->srv_reset_ = this->nh_.advertiseService("/integrator/reset", &Integrator::onResetIntegrator, this);
+
 
             ROS_INFO("[%s] Integrator correctly created and configured", this->integrator_name_.c_str());
 
@@ -56,114 +81,148 @@ namespace rosneuro {
             return this->loader_->createInstance(this->plugin_);
         }
 
-        void Integrator::subscribeAdvertiseServices(void){
-            this->sub_icnic_ = this->nh_.subscribe("/cvsa/neuroprediction/icnic", 1, &Integrator::onReceivedData_icnic, this);
-            this->sub_classifier_ = this->nh_.subscribe("/cvsa/neuroprediction/raw", 1, &Integrator::onReceivedData_classifier, this);
-            this->sub_artifacts_ = this->nh_.subscribe("/cvsa/artifact_presence", 1, &Integrator::onReceivedData_artifacts, this);
+        void Integrator::pruneBuffer(const ros::TimerEvent& event){
+            ros::Time now = ros::Time::now();
+            std::lock_guard<std::mutex> lock(this->mutex_);
 
-            this->pub_ = this->nh_.advertise<rosneuro_msgs::NeuroOutput>("/cvsa/neuroprediction/integrated", 1);
-            this->srv_reset_ = this->nh_.advertiseService("/integrator/reset", &Integrator::onResetIntegrator, this);
+            for (auto it = this->sync_set_.begin(); it != this->sync_set_.end(); /* nothing here */){
+                if ((now - it->second.timestamp) > this->max_age_){
+                    ROS_WARN("[%s] Removed seq %u from the buffer (timeout).", this->integrator_->name().c_str(), it->first);
+                    it = this->sync_set_.erase(it);
+                }else{
+                    ++it;
+                }
+            }
         }
 
         void Integrator::run(void) {
             ros::Rate r(512);
-            rosneuro_msgs::NeuroOutput msg;
             while(ros::ok()) {
                 ros::spinOnce();
                 r.sleep();
             }
         }
 
-        void Integrator::onReceivedData_icnic(const rosneuro_msgs::NeuroOutput& msg_icnic) {
-            uint32_t seq = msg_icnic.neuroheader.seq;
+        void Integrator::onReceivedData_mi(const rosneuro_msgs::NeuroOutput& msg_mi) {
+            uint32_t seq = msg_mi.neuroheader.seq;
             ros::Time now = ros::Time::now();
         
-            MessageSet set_to_process;
+            Sync_Set set_to_process;
             bool set_is_complete = false;
 
             {
-                std::lock_guard<std::mutex> lock(this->buffer_mutex_);
-                MessageSet& entry = this->buffer_[seq];
-                if (!entry.msg_icnic && !entry.msg_classifier && !entry.msg_artifact) {
+                std::lock_guard<std::mutex> lock(this->mutex_);
+                Sync_Set& entry = this->sync_set_[seq];
+                if (!entry.msg_mi && !entry.msg_cvsa && !entry.msg_artifact) {
                     entry.timestamp = now;
                 }
-                entry.msg_icnic = std::make_shared<rosneuro_msgs::NeuroOutput>(msg_icnic);
+                entry.msg_mi = std::make_shared<rosneuro_msgs::NeuroOutput>(msg_mi);
 
-                if (entry.msg_icnic && entry.msg_classifier && entry.msg_artifact){
-                    set_is_complete = true;
-                    set_to_process = entry;
-                    buffer_.erase(seq);
+                if(this->paradigm_ == "mi"){
+                    if (entry.msg_mi && entry.msg_artifact){
+                        set_is_complete = true;
+                        set_to_process = entry;
+                        sync_set_.erase(seq);
+                    }
+                }else if(this->paradigm_ == "hybrid"){
+                    if (entry.msg_mi && entry.msg_cvsa && entry.msg_artifact){
+                        set_is_complete = true;
+                        set_to_process = entry;
+                        sync_set_.erase(seq);
+                    }
                 }
             } 
 
             if (set_is_complete){
-                this->integrateSyncData(*set_to_process.msg_icnic, 
-                                        *set_to_process.msg_classifier, 
-                                        *set_to_process.msg_artifact);
+                this->integrateSyncData(set_to_process.msg_cvsa, 
+                                        set_to_process.msg_mi, 
+                                        set_to_process.msg_artifact);
+            }
+        }
+
+        void Integrator::onReceivedData_cvsa(const rosneuro_msgs::NeuroOutput& msg_cvsa) {
+            uint32_t seq = msg_cvsa.neuroheader.seq;
+            ros::Time now = ros::Time::now();
+        
+            Sync_Set set_to_process;
+            bool set_is_complete = false;
+
+            {
+                std::lock_guard<std::mutex> lock(this->mutex_);
+                Sync_Set& entry = this->sync_set_[seq];
+                if (!entry.msg_mi && !entry.msg_cvsa && !entry.msg_artifact) {
+                    entry.timestamp = now;
+                }
+                entry.msg_cvsa = std::make_shared<rosneuro_msgs::NeuroOutput>(msg_cvsa);
+
+                if(this->paradigm_ == "cvsa"){
+                    if (entry.msg_cvsa && entry.msg_artifact){
+                        set_is_complete = true;
+                        set_to_process = entry;
+                        sync_set_.erase(seq);
+                    }
+                }else if(this->paradigm_ == "hybrid"){
+                    if (entry.msg_mi && entry.msg_cvsa && entry.msg_artifact){
+                        set_is_complete = true;
+                        set_to_process = entry;
+                        sync_set_.erase(seq);
+                    }
+                }
+            } 
+
+            if (set_is_complete){
+                this->integrateSyncData(set_to_process.msg_cvsa, 
+                                        set_to_process.msg_mi, 
+                                        set_to_process.msg_artifact);
             }
         }
 
         void Integrator::onReceivedData_artifacts(const artifacts_bci::artifact_presence& msg_artifact) {
-            uint32_t seq = msg_artifact.seq;
+            uint32_t seq = msg_artifact.neuroheader.seq;
             ros::Time now = ros::Time::now();
         
-            MessageSet set_to_process;
+            Sync_Set set_to_process;
             bool set_is_complete = false;
 
             {
-                std::lock_guard<std::mutex> lock(this->buffer_mutex_);
-                MessageSet& entry = this->buffer_[seq];
-                if (!entry.msg_icnic && !entry.msg_classifier && !entry.msg_artifact) {
+                std::lock_guard<std::mutex> lock(this->mutex_);
+                Sync_Set& entry = this->sync_set_[seq];
+                if (!entry.msg_mi && !entry.msg_cvsa && !entry.msg_artifact) {
                     entry.timestamp = now;
                 }
                 entry.msg_artifact = std::make_shared<artifacts_bci::artifact_presence>(msg_artifact);
 
-                if (entry.msg_icnic && entry.msg_classifier && entry.msg_artifact){
-                    set_is_complete = true;
-                    set_to_process = entry;
-                    buffer_.erase(seq);
+                if(this->paradigm_ == "cvsa"){
+                    if (entry.msg_cvsa && entry.msg_artifact){
+                        set_is_complete = true;
+                        set_to_process = entry;
+                        sync_set_.erase(seq);
+                    }
+                }else if(this->paradigm_ == "hybrid"){
+                    if (entry.msg_mi && entry.msg_cvsa && entry.msg_artifact){
+                        set_is_complete = true;
+                        set_to_process = entry;
+                        sync_set_.erase(seq);
+                    }
+                }else if(this->paradigm_ == "mi"){
+                    if (entry.msg_mi && entry.msg_artifact){
+                        set_is_complete = true;
+                        set_to_process = entry;
+                        sync_set_.erase(seq);
+                    }
                 }
             } 
 
             if (set_is_complete){
-                this->integrateSyncData(*set_to_process.msg_icnic, 
-                                        *set_to_process.msg_classifier, 
-                                        *set_to_process.msg_artifact);
+                this->integrateSyncData(set_to_process.msg_cvsa, 
+                                        set_to_process.msg_mi, 
+                                        set_to_process.msg_artifact);
             }
         }
 
-        void Integrator::onReceivedData_classifier(const rosneuro_msgs::NeuroOutput& msg_classifier) {
-            uint32_t seq = msg_classifier.neuroheader.seq;
-            ros::Time now = ros::Time::now();
-        
-            MessageSet set_to_process;
-            bool set_is_complete = false;
-
-            {
-                std::lock_guard<std::mutex> lock(this->buffer_mutex_);
-                MessageSet& entry = this->buffer_[seq];
-                if (!entry.msg_icnic && !entry.msg_classifier && !entry.msg_artifact) {
-                    entry.timestamp = now;
-                }
-                entry.msg_classifier = std::make_shared<rosneuro_msgs::NeuroOutput>(msg_classifier);
-
-                if (entry.msg_icnic && entry.msg_classifier && entry.msg_artifact){
-                    set_is_complete = true;
-                    set_to_process = entry;
-                    buffer_.erase(seq);
-                }
-            } 
-
-            if (set_is_complete){
-                this->integrateSyncData(*set_to_process.msg_icnic, 
-                                        *set_to_process.msg_classifier, 
-                                        *set_to_process.msg_artifact);
-            }
-        }
-
-        void Integrator::integrateSyncData(const rosneuro_msgs::NeuroOutput& msg_icnic, 
-                               const rosneuro_msgs::NeuroOutput& msg_classifier, 
-                               const artifacts_bci::artifact_presence& msg_artifact){
+        void Integrator::integrateSyncData( std::shared_ptr<rosneuro_msgs::NeuroOutput> cvsa,
+                                            std::shared_ptr<rosneuro_msgs::NeuroOutput> mi,
+                                            std::shared_ptr<artifacts_bci::artifact_presence> artifact){
             uint32_t seq_num = msg_icnic.neuroheader.seq; 
 
             // find the index of the ic_class_label_ in the icnic message
@@ -198,21 +257,6 @@ namespace rosneuro {
             this->msgoutput_.neuroheader.seq = seq_num;
             this->msgoutput_.decoder.classes = msg_classifier.decoder.classes;
             this->pub_.publish(this->msgoutput_);
-        }
-
-        void Integrator::pruneBuffer(const ros::TimerEvent& event){
-            ros::Time now = ros::Time::now();
-            std::lock_guard<std::mutex> lock(this->buffer_mutex_);
-
-            for (auto it = this->buffer_.begin(); it != this->buffer_.end(); /* nothing here */){
-                if ((now - it->second.timestamp) > this->max_age_){
-                    ROS_WARN("[%s] Removed seq %u from the buffer (timeout).", this->integrator_->name().c_str(), it->first);
-                    it = this->buffer_.erase(it);
-                }
-                else{
-                    ++it;
-                }
-            }
         }
 
         void Integrator::setMessage(const Eigen::VectorXf& data) {

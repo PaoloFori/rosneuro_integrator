@@ -17,14 +17,15 @@
 namespace rosneuro {
 	namespace integrator {
         class Integrator {
-            struct MessageSet{
+            struct Sync_Set{
                 ros::Time timestamp;
-                std::shared_ptr<rosneuro_msgs::NeuroOutput> msg_icnic;
-                std::shared_ptr<rosneuro_msgs::NeuroOutput> msg_classifier;
+                std::shared_ptr<rosneuro_msgs::NeuroOutput> msg_cvsa;
+                std::shared_ptr<rosneuro_msgs::NeuroOutput> msg_mi;
                 std::shared_ptr<artifacts_bci::artifact_presence> msg_artifact;
 
-                MessageSet() : msg_icnic(nullptr), msg_classifier(nullptr), msg_artifact(nullptr) {}
+                Sync_Set() : msg_cvsa(nullptr), msg_mi(nullptr), msg_artifact(nullptr) {}
             };
+
             public:
                 Integrator(void);
                 ~Integrator(void);
@@ -36,8 +37,8 @@ namespace rosneuro {
                 virtual boost::shared_ptr<GenericIntegrator> setIntegrator(void);
 
             private:
-                void onReceivedData_classifier(const rosneuro_msgs::NeuroOutput& msg);
-                void onReceivedData_icnic(const rosneuro_msgs::NeuroOutput& msg);
+                void onReceivedData_cvsa(const rosneuro_msgs::NeuroOutput& msg);
+                void onReceivedData_mi(const rosneuro_msgs::NeuroOutput& msg);
                 void onReceivedData_artifacts(const artifacts_bci::artifact_presence& msg);
                 bool onResetIntegrator(std_srvs::Empty::Request& req,
                                        std_srvs::Empty::Response& res);
@@ -46,29 +47,26 @@ namespace rosneuro {
                 std::vector<float> eigenToVector(const Eigen::VectorXf& in);
                 bool isOverThreshold(const Eigen::VectorXf& values);
                 void setMessage(const Eigen::VectorXf& data);
-                void subscribeAdvertiseServices(void);
                 bool loadPlugin(void);
                 void pruneBuffer(const ros::TimerEvent& event);
-                void integrateSyncData(const rosneuro_msgs::NeuroOutput& msg_icnic, 
-                                       const rosneuro_msgs::NeuroOutput& msg_classifier, 
-                                       const artifacts_bci::artifact_presence& msg_artifact);
+                void integrateSyncData( std::shared_ptr<rosneuro_msgs::NeuroOutput> mi,
+                                        std::shared_ptr<rosneuro_msgs::NeuroOutput> cvsa,
+                                        std::shared_ptr<artifacts_bci::artifact_presence> artifact);
 
                 ros::NodeHandle nh_, p_nh_;
-                ros::Subscriber	sub_icnic_, sub_classifier_, sub_artifacts_;
+                ros::Subscriber	sub_cvsa_, sub_mi_, sub_artifacts_;
                 ros::Publisher	pub_;
                 ros::ServiceServer srv_reset_;
 
                 rosneuro_msgs::NeuroOutput msgoutput_;
 
-                int  ic_class_label_;
-                const int ic_class_default_ = 1;
-                float ic_threshold_;
+                std::string paradigm_;
 
                 // for the data synchronization
                 ros::Timer prune_timer_;
                 ros::Duration max_age_;
-                std::map<uint32_t, MessageSet> buffer_; 
-                std::mutex buffer_mutex_;
+                std::map<uint32_t, Sync_Set> sync_set_; 
+                std::mutex mutex_;
 
                 std::string plugin_, integrator_name_;
 
