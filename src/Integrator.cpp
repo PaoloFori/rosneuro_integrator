@@ -30,6 +30,7 @@ namespace rosneuro {
 
             // configure sincronization parameters
             this->max_age_ = ros::Duration(1.0);
+            this->start_cf_ = ros::Time::now();
 
             // paradigm organization
             if(this->p_nh_.getParam("paradigm", this->paradigm_) == false) {
@@ -229,9 +230,9 @@ namespace rosneuro {
             if(this->paradigm_ == "cvsa"){
                 classes = cvsa->decoder.classes;
                 seq_num = cvsa->neuroheader.seq;
-            }else if(this->paradigm_ == "mi" | this->paradigm_ == "hybrid"){
+            }else if(this->paradigm_ == "mi" || this->paradigm_ == "hybrid"){
                 classes = mi->decoder.classes;
-                seq_num = mi->neuroheader.seq; 
+                seq_num = mi->neuroheader.seq;
             }
             int num_classes = classes.size();
             Eigen::VectorXf output(num_classes);
@@ -243,50 +244,51 @@ namespace rosneuro {
                 output = this->integrator_->apply(neutral_prob);
                 */
             }else{
-                double t = (cvsa->header.stamp - this->start_cf_).toSec();
-                if (t < 0.0) t = 0.0; 
-                double alpha = 0.0;
-                if(t <= 2.5){
-                    alpha = 0.5 * (1.0 + cos(M_PI * (t - 1.0) / 2.5));
-                }else{
-                    alpha = 0.0;
+                if(this->paradigm_ == "hybrid"){
+                    double t = (cvsa->header.stamp - this->start_cf_).toSec();
+                    if (t < 0.0) t = 0.0; 
+                    double alpha = 0.0;
+                    if(t <= 2.5){
+                        alpha = 0.5 * (1.0 + cos(M_PI * t / 2.5));
+                    }else{
+                        alpha = 0.0;
+                    }
+                
+                    std::vector<double> tempered_priors(num_classes, 0.0);
+                    double sum_priors = 0.0;
+                    for (int i = 0; i < num_classes; i++) {
+                        tempered_priors[i] = std::pow(cvsa->softpredict.data[i], alpha);
+                        sum_priors += tempered_priors[i];
+                    }
+                    for (int i = 0; i < num_classes; i++) {
+                        tempered_priors[i] /= sum_priors;
+                    }
+                
+                    // Merge with Bayes Theorem
+                    double sum_final = 0.0;
+                    for (int i = 0; i < num_classes; i++) {
+                        output[i] = mi->softpredict.data[i] * tempered_priors[i];
+                        sum_final += output[i];
+                    }
+                    for (int i = 0; i < num_classes; i++) {
+                        output[i] /= (float)sum_final;
+                    }
+                }else if(this->paradigm_ == "cvsa"){
+                    output = this->vectorToEigen(cvsa->softpredict.data);
+                }else if(this->paradigm_ == "mi"){
+                    output = this->vectorToEigen(mi->softpredict.data);
                 }
-            
-                std::vector<double> tempered_priors(num_classes, 0.0);
-                double sum_priors = 0.0;
-                for (int i = 0; i < num_classes; i++) {
-                    tempered_priors[i] = std::pow(cvsa->softpredict.data[i], alpha);
-                    sum_priors += tempered_priors[i];
-                }
-                for (int i = 0; i < num_classes; i++) {
-                    tempered_priors[i] /= sum_priors;
-                }
-            
-                // Merge with Bayes Theorem
-                Eigen::VectorXf merged_prob(num_classes);
-                double sum_final = 0.0;
-                for (int i = 0; i < num_classes; i++) {
-                    merged_prob[i] = mi->softpredict.data[i] * tempered_priors[i];
-                    sum_final += merged_prob[i];
-                }
-                for (int i = 0; i < num_classes; i++) {
-                    merged_prob[i] /= (float)sum_final;
-                }
-            
-                output = this->integrator_->apply(merged_prob);
+                
+                output = this->integrator_->apply(output);
             }
+            
         
-            this->setMessage(output);
+            this->msgoutput_.header.stamp = ros::Time::now();
+            this->msgoutput_.softpredict.data = this->eigenToVector(output);
             this->msgoutput_.neuroheader.seq = seq_num;
-            this->msgoutput_.header.stamp = artifact->header.stamp;
             this->msgoutput_.decoder.classes = classes;
 
             this->pub_.publish(this->msgoutput_);
-        }
-
-        void Integrator::setMessage(const Eigen::VectorXf& data) {
-            this->msgoutput_.header.stamp = ros::Time::now();
-            this->msgoutput_.softpredict.data = this->eigenToVector(data);
         }
 
         bool Integrator::resetIntegrator(void) {
@@ -297,7 +299,8 @@ namespace rosneuro {
             ROS_INFO("[%s] Integrator has been reset", this->integrator_->name().c_str());
             ros::spinOnce();
             std::vector<float> initial_vals = this->integrator_->getInitPrecentual(); 
-            this->setMessage(this->vectorToEigen(initial_vals));
+            this->msgoutput_.header.stamp = ros::Time::now();
+            this->msgoutput_.softpredict.data = initial_vals;
             this->pub_.publish(this->msgoutput_);
             return true;
         }
