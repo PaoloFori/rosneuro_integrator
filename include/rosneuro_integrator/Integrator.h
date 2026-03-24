@@ -67,6 +67,7 @@ namespace rosneuro {
                 ros::Duration max_age_;
                 std::map<uint32_t, Sync_Set> sync_set_; 
                 std::mutex mutex_;
+                ros::Time start_cf_;
 
                 std::string plugin_, integrator_name_;
 

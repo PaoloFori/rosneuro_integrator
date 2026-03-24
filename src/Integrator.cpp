@@ -178,7 +178,7 @@ namespace rosneuro {
         }
 
         void Integrator::onReceivedData_artifacts(const artifacts_bci::artifact_presence& msg_artifact) {
-            uint32_t seq = msg_artifact.neuroheader.seq;
+            uint32_t seq = msg_artifact.seq;
             ros::Time now = ros::Time::now();
         
             Sync_Set set_to_process;
@@ -221,41 +221,66 @@ namespace rosneuro {
         }
 
         void Integrator::integrateSyncData( std::shared_ptr<rosneuro_msgs::NeuroOutput> cvsa,
-                                            std::shared_ptr<rosneuro_msgs::NeuroOutput> mi,
-                                            std::shared_ptr<artifacts_bci::artifact_presence> artifact){
-            uint32_t seq_num = msg_icnic.neuroheader.seq; 
+                                    std::shared_ptr<rosneuro_msgs::NeuroOutput> mi,
+                                    std::shared_ptr<artifacts_bci::artifact_presence> artifact) {
 
-            // find the index of the ic_class_label_ in the icnic message
-            int ic_index;
-            auto it = std::find(msg_icnic.decoder.classes.begin(), 
-                    msg_icnic.decoder.classes.end(), 
-                    this->ic_class_label_);
-
-            if (it != msg_icnic.decoder.classes.end()){
-                ic_index = static_cast<int>(std::distance(msg_icnic.decoder.classes.begin(), it));
-            }else{
-                ROS_ERROR("[%s] ic_class_label %d not found in icnic classes", this->integrator_->name().c_str(), this->ic_class_label_);
-                return;
+            std::vector<int> classes;
+            uint32_t seq_num;
+            if(this->paradigm_ == "cvsa"){
+                classes = cvsa->decoder.classes;
+                seq_num = cvsa->neuroheader.seq;
+            }else if(this->paradigm_ == "mi" | this->paradigm_ == "hybrid"){
+                classes = mi->decoder.classes;
+                seq_num = mi->neuroheader.seq; 
             }
+            int num_classes = classes.size();
+            Eigen::VectorXf output(num_classes);
 
-            // check if the classifier probability must be integrated or not
-            Eigen::VectorXf icnic_data  = this->vectorToEigen(msg_icnic.softpredict.data);
-            Eigen::VectorXf output;
-            if(!msg_artifact.has_artifact){
-                // no EOG, artifact and in IC state
-                std::vector<float> merged_prob = msg_classifier.softpredict.data;
-                for(int i = 0; i < merged_prob.size(); i++){
-                    merged_prob[i] = (1.0 - icnic_data[ic_index])*0.5 + icnic_data[ic_index]*msg_classifier.softpredict.data[i];
-                }
-                output = this->integrator_->apply(this->vectorToEigen(merged_prob));
-            }else{
-                // in NIC
+            if (artifact->has_artifact) {
                 output = this->integrator_->getData();
+                /*
+                Eigen::VectorXf neutral_prob = Eigen::VectorXf::Constant(num_classes, 1.0f / num_classes);
+                output = this->integrator_->apply(neutral_prob);
+                */
+            }else{
+                double t = (cvsa->header.stamp - this->start_cf_).toSec();
+                if (t < 0.0) t = 0.0; 
+                double alpha = 0.0;
+                if(t <= 2.5){
+                    alpha = 0.5 * (1.0 + cos(M_PI * (t - 1.0) / 2.5));
+                }else{
+                    alpha = 0.0;
+                }
+            
+                std::vector<double> tempered_priors(num_classes, 0.0);
+                double sum_priors = 0.0;
+                for (int i = 0; i < num_classes; i++) {
+                    tempered_priors[i] = std::pow(cvsa->softpredict.data[i], alpha);
+                    sum_priors += tempered_priors[i];
+                }
+                for (int i = 0; i < num_classes; i++) {
+                    tempered_priors[i] /= sum_priors;
+                }
+            
+                // Merge with Bayes Theorem
+                Eigen::VectorXf merged_prob(num_classes);
+                double sum_final = 0.0;
+                for (int i = 0; i < num_classes; i++) {
+                    merged_prob[i] = mi->softpredict.data[i] * tempered_priors[i];
+                    sum_final += merged_prob[i];
+                }
+                for (int i = 0; i < num_classes; i++) {
+                    merged_prob[i] /= (float)sum_final;
+                }
+            
+                output = this->integrator_->apply(merged_prob);
             }
-
+        
             this->setMessage(output);
             this->msgoutput_.neuroheader.seq = seq_num;
-            this->msgoutput_.decoder.classes = msg_classifier.decoder.classes;
+            this->msgoutput_.header.stamp = artifact->header.stamp;
+            this->msgoutput_.decoder.classes = classes;
+
             this->pub_.publish(this->msgoutput_);
         }
 
@@ -280,6 +305,7 @@ namespace rosneuro {
         bool Integrator::onResetIntegrator(std_srvs::Empty::Request& req,
                                              std_srvs::Empty::Response& res) {
             ROS_INFO("[%s] Reset integrator service called", this->integrator_->name().c_str());
+            this->start_cf_ = ros::Time::now();
             return this->resetIntegrator();
         }
 
