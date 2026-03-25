@@ -15,6 +15,7 @@
 #include "rosneuro_integrator/GenericIntegrator.h"
 
 namespace rosneuro {
+    const std::vector<int> hybrid_classes = {750, 751};
 	namespace integrator {
         class Integrator {
             struct Sync_Set{

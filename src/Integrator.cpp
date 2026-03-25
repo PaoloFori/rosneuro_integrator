@@ -230,8 +230,11 @@ namespace rosneuro {
             if(this->paradigm_ == "cvsa"){
                 classes = cvsa->decoder.classes;
                 seq_num = cvsa->neuroheader.seq;
-            }else if(this->paradigm_ == "mi" || this->paradigm_ == "hybrid"){
+            }else if(this->paradigm_ == "mi"){
                 classes = mi->decoder.classes;
+                seq_num = mi->neuroheader.seq;
+            }else if(this->paradigm_ == "hybrid"){
+                classes = hybrid_classes;
                 seq_num = mi->neuroheader.seq;
             }
             int num_classes = classes.size();
@@ -301,6 +304,11 @@ namespace rosneuro {
             std::vector<float> initial_vals = this->integrator_->getInitPrecentual(); 
             this->msgoutput_.header.stamp = ros::Time::now();
             this->msgoutput_.softpredict.data = initial_vals;
+            std::cout << "Initial values after reset: ";
+            for(size_t i = 0; i < initial_vals.size(); i++) {
+                std::cout << initial_vals[i] << " ";
+            }
+            std::cout << std::endl;
             this->pub_.publish(this->msgoutput_);
             return true;
         }
