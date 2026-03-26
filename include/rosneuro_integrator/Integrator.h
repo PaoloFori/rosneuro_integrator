@@ -41,8 +41,7 @@ namespace rosneuro {
                 void onReceivedData_cvsa(const rosneuro_msgs::NeuroOutput& msg);
                 void onReceivedData_mi(const rosneuro_msgs::NeuroOutput& msg);
                 void onReceivedData_artifacts(const artifacts_bci::artifact_presence& msg);
-                bool onResetIntegrator(std_srvs::Empty::Request& req,
-                                       std_srvs::Empty::Response& res);
+                void onReceivedEvent(const rosneuro_msgs::NeuroEvent& msg);
                 bool resetIntegrator(void);
                 Eigen::VectorXf vectorToEigen(const std::vector<float>& in);
                 std::vector<float> eigenToVector(const Eigen::VectorXf& in);
@@ -53,15 +52,20 @@ namespace rosneuro {
                 void integrateSyncData( std::shared_ptr<rosneuro_msgs::NeuroOutput> mi,
                                         std::shared_ptr<rosneuro_msgs::NeuroOutput> cvsa,
                                         std::shared_ptr<artifacts_bci::artifact_presence> artifact);
+                std::vector<float>  normalize_input(const std::vector<float>& input);
 
                 ros::NodeHandle nh_, p_nh_;
-                ros::Subscriber	sub_cvsa_, sub_mi_, sub_artifacts_;
-                ros::Publisher	pub_;
-                ros::ServiceServer srv_reset_;
+                ros::Subscriber	sub_cvsa_, sub_mi_, sub_artifacts_, sub_events_;
+                ros::Publisher	pub_raw_, pub_normalized_; 
 
                 rosneuro_msgs::NeuroOutput msgoutput_;
-
                 std::string paradigm_;
+
+                std::vector<float> thresholds_;
+                std::vector<int> classes_;
+
+                int  reset_event_;
+                const int reset_event_default_ = 781;
 
                 // for the data synchronization
                 ros::Timer prune_timer_;

@@ -32,6 +32,22 @@ namespace rosneuro {
             this->max_age_ = ros::Duration(1.0);
             this->start_cf_ = ros::Time::now();
 
+            this->p_nh_.param<int>("reset_event", this->reset_event_, this->reset_event_default_);
+            ROS_INFO("[%s] Reset event set to: %d", this->integrator_name_.c_str(), this->reset_event_);
+
+            // thresholds
+            if(this->p_nh_.getParam("classes", this->classes_) == false) {
+                ROS_ERROR("[%s] Parameter 'classes' is mandatory", this->integrator_name_.c_str());
+                return false;
+            }
+            if(this->p_nh_.getParam("thresholds", this->thresholds_) == false) {
+                ROS_ERROR("[%s] Parameter 'thresholds' is mandatory for evaluation modality", this->integrator_name_.c_str());
+                return false;
+            }else if(this->thresholds_.size() != this->classes_.size()) {
+                ROS_ERROR("[%s] Number of thresholds must match the number of classes", this->integrator_name_.c_str());
+                return false;
+            }
+
             // paradigm organization
             if(this->p_nh_.getParam("paradigm", this->paradigm_) == false) {
                 ROS_ERROR("[%s] Parameter 'paradigm' is mandatory", this->integrator_name_.c_str());
@@ -54,17 +70,32 @@ namespace rosneuro {
                 }
             }
             
-            std::string topic_pub = "/" + this->paradigm_ + "/neuroprediction/integrated/raw";
-            this->pub_ = this->nh_.advertise<rosneuro_msgs::NeuroOutput>(topic_pub, 1);
+            std::string topic_pub_raw = "/" + this->paradigm_ + "/neuroprediction/integrated/raw";
+            this->pub_raw_ = this->nh_.advertise<rosneuro_msgs::NeuroOutput>(topic_pub_raw, 1);
+            std::string topic_pub_normalized = "/" + this->paradigm_ + "/neuroprediction/integrated/normalized";
+            this->pub_normalized_ = this->nh_.advertise<rosneuro_msgs::NeuroOutput>(topic_pub_normalized, 1);
 
             this->sub_artifacts_ = this->nh_.subscribe("/artifact_presence", 1, &Integrator::onReceivedData_artifacts, this);
 
-            this->srv_reset_ = this->nh_.advertiseService("/integrator/reset", &Integrator::onResetIntegrator, this);
-
+            this->sub_events_ = this->nh_.subscribe("/events/bus", 1, &Integrator::onReceivedEvent, this);
 
             ROS_INFO("[%s] Integrator correctly created and configured", this->integrator_name_.c_str());
 
             return true;
+        }
+
+        std::vector<float>  Integrator::normalize_input(const std::vector<float>& input) {
+            std::vector<float> normalized_output(input.size(), 0.0f);
+
+            for (size_t i = 0; i < input.size(); ++i) {
+                if (this->thresholds_[i] > 0.0f) {
+                    float mapped_val = input[i] / this->thresholds_[i];
+
+                    normalized_output[i] = std::max(0.0f, std::min(1.0f, mapped_val));
+                }
+            }
+        
+            return normalized_output;
         }
 
         bool Integrator::loadPlugin(void) {
@@ -225,19 +256,15 @@ namespace rosneuro {
                                     std::shared_ptr<rosneuro_msgs::NeuroOutput> mi,
                                     std::shared_ptr<artifacts_bci::artifact_presence> artifact) {
 
-            std::vector<int> classes;
             uint32_t seq_num;
             if(this->paradigm_ == "cvsa"){
-                classes = cvsa->decoder.classes;
                 seq_num = cvsa->neuroheader.seq;
             }else if(this->paradigm_ == "mi"){
-                classes = mi->decoder.classes;
                 seq_num = mi->neuroheader.seq;
             }else if(this->paradigm_ == "hybrid"){
-                classes = hybrid_classes;
                 seq_num = mi->neuroheader.seq;
             }
-            int num_classes = classes.size();
+            int num_classes = this->classes_.size();
             Eigen::VectorXf output(num_classes);
 
             if (artifact->has_artifact) {
@@ -285,13 +312,18 @@ namespace rosneuro {
                 output = this->integrator_->apply(output);
             }
             
+            std::vector<float> raw_output = this->eigenToVector(output);
         
             this->msgoutput_.header.stamp = ros::Time::now();
-            this->msgoutput_.softpredict.data = this->eigenToVector(output);
+            this->msgoutput_.softpredict.data = raw_output;
             this->msgoutput_.neuroheader.seq = seq_num;
-            this->msgoutput_.decoder.classes = classes;
+            this->msgoutput_.decoder.classes = this->classes_;
 
-            this->pub_.publish(this->msgoutput_);
+            this->pub_raw_.publish(this->msgoutput_);
+
+            std::vector<float> normalized_output = this->normalize_input(raw_output);
+            this->msgoutput_.softpredict.data = normalized_output;
+            this->pub_normalized_.publish(this->msgoutput_);
         }
 
         bool Integrator::resetIntegrator(void) {
@@ -300,24 +332,21 @@ namespace rosneuro {
                 return false;
             }
             ROS_INFO("[%s] Integrator has been reset", this->integrator_->name().c_str());
+            this->start_cf_ = ros::Time::now();
             ros::spinOnce();
             std::vector<float> initial_vals = this->integrator_->getInitPrecentual(); 
             this->msgoutput_.header.stamp = ros::Time::now();
             this->msgoutput_.softpredict.data = initial_vals;
-            std::cout << "Initial values after reset: ";
-            for(size_t i = 0; i < initial_vals.size(); i++) {
-                std::cout << initial_vals[i] << " ";
-            }
-            std::cout << std::endl;
-            this->pub_.publish(this->msgoutput_);
+            this->msgoutput_.decoder.classes = this->classes_;
+            this->pub_normalized_.publish(this->msgoutput_);
+            this->pub_raw_.publish(this->msgoutput_);
             return true;
         }
 
-        bool Integrator::onResetIntegrator(std_srvs::Empty::Request& req,
-                                             std_srvs::Empty::Response& res) {
-            ROS_INFO("[%s] Reset integrator service called", this->integrator_->name().c_str());
-            this->start_cf_ = ros::Time::now();
-            return this->resetIntegrator();
+        void Integrator::onReceivedEvent(const rosneuro_msgs::NeuroEvent& msg) {
+            if(msg.event == this->reset_event_) {
+                this->resetIntegrator();
+            }
         }
 
         Eigen::VectorXf Integrator::vectorToEigen(const std::vector<float>& in) {
