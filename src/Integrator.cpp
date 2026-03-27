@@ -84,14 +84,20 @@ namespace rosneuro {
             return true;
         }
 
-        std::vector<float>  Integrator::normalize_input(const std::vector<float>& input) {
-            std::vector<float> normalized_output(input.size(), 0.0f);
+        std::vector<float> Integrator::normalize_input(const std::vector<float>& input) {
+            float p_rest = 1.0f / (float)this->classes_.size();
+            std::vector<float> normalized_output(input.size(), p_rest);
 
             for (size_t i = 0; i < input.size(); ++i) {
-                if (this->thresholds_[i] > 0.0f) {
-                    float mapped_val = input[i] / this->thresholds_[i];
+                if (this->thresholds_[i] > p_rest) { 
+                
+                    float slope = (1.0f - p_rest) / (this->thresholds_[i] - p_rest);
 
+                    float mapped_val = p_rest + (input[i] - p_rest) * slope;
                     normalized_output[i] = std::max(0.0f, std::min(1.0f, mapped_val));
+
+                } else {
+                    normalized_output[i] = input[i]; 
                 }
             }
         

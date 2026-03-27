@@ -8,7 +8,8 @@ int main(int argc, char** argv) {
 
 	if(!integrator.configure()) {
 		ROS_ERROR("[integrator] Configuration failed");
-		return -1;
+		ros::shutdown();
+		return 0;
 	}
 
 	integrator.run();
