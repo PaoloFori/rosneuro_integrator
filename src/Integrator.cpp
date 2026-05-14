@@ -355,6 +355,10 @@ namespace rosneuro {
             }
         }
 
+        void Integrator::setMessage(const Eigen::VectorXf& data) {
+            this->msgoutput_.softpredict.data = this->eigenToVector(data);
+        }
+
         Eigen::VectorXf Integrator::vectorToEigen(const std::vector<float>& in) {
             float* ptr_in = const_cast<float*>(in.data());
             return Eigen::Map<Eigen::VectorXf>(ptr_in, in.size());

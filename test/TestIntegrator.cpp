@@ -7,15 +7,11 @@ namespace rosneuro {
             public:
                 TestGenericIntegrator() : GenericIntegrator() {}
                 ~TestGenericIntegrator() {}
-                bool configure(void) {
-                    return true;
-                }
-                Eigen::VectorXf apply(const Eigen::VectorXf& in) {
-                    return in;
-                }
-                bool reset(void) {
-                    return true;
-                }
+                bool configure(void) { return true; }
+                Eigen::VectorXf apply(const Eigen::VectorXf& in) { return in; }
+                bool reset(void) { return true; }
+                Eigen::VectorXf getData(void) { return Eigen::VectorXf::Constant(2, 0.5f); }
+                std::vector<float> getInitPrecentual(void) { return {0.5f, 0.5f}; }
         };
 
         class TestIntegrator : public Integrator {
@@ -36,21 +32,31 @@ namespace rosneuro {
                 }
                 void TearDown() {
                     ros::param::del("~plugin");
+                    ros::param::del("~paradigm");
+                    ros::param::del("~classes");
+                    ros::param::del("~thresholds");
                     delete integrator;
                 }
+
+                void setConfigureParams(const std::string& paradigm = "mi") {
+                    ros::param::set("~plugin", std::string("test"));
+                    ros::param::set("~paradigm", paradigm);
+                    std::vector<int> classes = {769, 770};
+                    ros::param::set("~classes", classes);
+                    std::vector<double> thresholds = {0.7, 0.7};
+                    ros::param::set("~thresholds", thresholds);
+                }
+
                 TestIntegrator* integrator;
-                std::string integrator_plugin = "test";
         };
 
 
         TEST_F(TestIntegratorSuite, TestConstructor) {
-            EXPECT_FALSE(integrator->has_new_data_);
-            EXPECT_TRUE(integrator->is_first_message_);
             EXPECT_NE(integrator->loader_, nullptr);
         }
 
         TEST_F(TestIntegratorSuite, TestConfigure) {
-            ros::param::set("~plugin", integrator_plugin);
+            setConfigureParams();
             EXPECT_TRUE(integrator->configure());
         }
 
@@ -59,28 +65,17 @@ namespace rosneuro {
         }
 
         TEST_F(TestIntegratorSuite, TestOnReceivedData) {
-            ros::param::set("~plugin", integrator_plugin);
+            setConfigureParams("mi");
             EXPECT_TRUE(integrator->configure());
 
-            rosneuro_msgs::NeuroHeader header;
-            header.seq = 1;
-
             rosneuro_msgs::NeuroOutput msg;
-            msg.softpredict.data = {1.0, 2.0};
-            msg.neuroheader = header;
-            msg.hardpredict.data = {1, 2};
-            msg.decoder.classes = {"a", "b"};
-            msg.decoder.type = "type";
-            msg.decoder.path = "path";
+            msg.softpredict.data = {0.6f, 0.4f};
+            msg.neuroheader.seq = 42;
+            msg.header.stamp = ros::Time::now();
 
-            integrator->onReceivedData(msg);
-            EXPECT_TRUE(integrator->has_new_data_);
-            EXPECT_FALSE(integrator->is_first_message_);
-            EXPECT_EQ(integrator->msgoutput_.neuroheader, msg.neuroheader);
-            EXPECT_EQ(integrator->msgoutput_.hardpredict.data, msg.hardpredict.data);
-            EXPECT_EQ(integrator->msgoutput_.decoder.classes, msg.decoder.classes);
-            EXPECT_EQ(integrator->msgoutput_.decoder.type, msg.decoder.type);
-            EXPECT_EQ(integrator->msgoutput_.decoder.path, msg.decoder.path);
+            integrator->onReceivedData_mi(msg);
+            // MI arrived but artifact not yet → one incomplete entry in sync_set_
+            EXPECT_EQ(integrator->sync_set_.size(), 1u);
         }
 
         TEST_F(TestIntegratorSuite, TestSetMessage) {
@@ -93,35 +88,29 @@ namespace rosneuro {
         }
 
         TEST_F(TestIntegratorSuite, TestResetIntegrator) {
-            ros::param::set("~plugin", integrator_plugin);
+            setConfigureParams();
             EXPECT_TRUE(integrator->configure());
-            integrator->output_ = Eigen::VectorXf::Ones(2);
-
             EXPECT_TRUE(integrator->resetIntegrator());
-            EXPECT_FALSE(integrator->has_new_data_);
         }
 
         TEST_F(TestIntegratorSuite, TestOnReceivedEvent) {
-            ros::param::set("~plugin", integrator_plugin);
+            setConfigureParams();
             EXPECT_TRUE(integrator->configure());
-            integrator->has_new_data_ = true;
+            ros::Time before = ros::Time::now();
             rosneuro_msgs::NeuroEvent msg;
             msg.event = 781;
-
             integrator->onReceivedEvent(msg);
-
-            EXPECT_FALSE(integrator->has_new_data_);
+            EXPECT_GE(integrator->start_cf_, before);
         }
 
         TEST_F(TestIntegratorSuite, TestOnReceivedEventWrong) {
-            ros::param::set("~plugin", integrator_plugin);
+            setConfigureParams();
             EXPECT_TRUE(integrator->configure());
-            integrator->has_new_data_ = true;
+            ros::Time saved_cf = integrator->start_cf_;
             rosneuro_msgs::NeuroEvent msg;
-
+            msg.event = 999; // not reset event
             integrator->onReceivedEvent(msg);
-
-            EXPECT_TRUE(integrator->has_new_data_);
+            EXPECT_EQ(integrator->start_cf_, saved_cf); // start_cf_ must not change
         }
 
         TEST_F(TestIntegratorSuite, TestVectorToEigen) {
