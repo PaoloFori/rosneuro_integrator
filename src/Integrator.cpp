@@ -300,7 +300,7 @@ namespace rosneuro {
                         tempered_priors[i] /= sum_priors;
                     }
                 
-                    // Merge with Bayes Theorem
+                    // Merge with Bayes Theorem (LOP)
                     double sum_final = 0.0;
                     for (int i = 0; i < num_classes; i++) {
                         output[i] = mi->softpredict.data[i] * tempered_priors[i];
@@ -308,6 +308,21 @@ namespace rosneuro {
                     }
                     for (int i = 0; i < num_classes; i++) {
                         output[i] /= (float)sum_final;
+                    }
+
+                    // Agreement gate: pull fused output toward uniform when MI and CVSA disagree.
+                    // agree_raw = dot(CVSA, MI); agree_w in [0,1] (0=disagree, 1=agree).
+                    // neutral_weight = (1 - agree_w) * alpha  →  max at t=0, zero at t>=2.5 s.
+                    // output = (1-neutral_weight)*lop + neutral_weight*(1/n)  (stays normalised).
+                    double agree_raw = 0.0;
+                    for (int i = 0; i < num_classes; i++) {
+                        agree_raw += cvsa->softpredict.data[i] * mi->softpredict.data[i];
+                    }
+                    double uniform_p      = 1.0 / num_classes;
+                    double agree_w        = std::max(0.0, (agree_raw - uniform_p) / (1.0 - uniform_p));
+                    double neutral_weight = (1.0 - agree_w) * alpha;
+                    for (int i = 0; i < num_classes; i++) {
+                        output[i] = (float)((1.0 - neutral_weight) * output[i] + neutral_weight * uniform_p);
                     }
                 }else if(this->paradigm_ == "cvsa"){
                     output = this->vectorToEigen(cvsa->softpredict.data);

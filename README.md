@@ -39,11 +39,20 @@ If the artifact topic flags `has_artifact: true`, the node immediately freezes t
 
 ### 2. Paradigm Routing
 * **Single Paradigms (`cvsa` or `mi`):** The node acts as a pass-through, feeding the raw probabilities directly into the generic `rosneuro` integrator plugin.
-* **Hybrid Paradigm (`hybrid`):** The node performs a **Dynamic Bayesian Fusion with Tempered Priors**. 
-  * The time $t$ elapsed since the start of the Continuous Feedback (CF) is calculated.
-  * A temperature parameter $\alpha(t)$ follows a cosine decay from 1.0 to 0.0 over the first 2.5 seconds.
-  * The CVSA probability is used to calculate a dynamic prior using a Logarithmic Opinion Pool (elevating the probabilities to the power of $\alpha$).
-  * The MI probability (Posterior) is updated with this dynamic prior via Bayes' Theorem. This provides a fast initial boost driven by visual attention, which smoothly fades out to give full control to motor imagery.
+* **Hybrid Paradigm (`hybrid`):** The node performs a **Dynamic Bayesian Fusion with Tempered Priors and Agreement Gate**, in two steps:
+
+  **Step 1 — LOP (Logarithmic Opinion Pool):**
+  * The time $t$ elapsed since the start of the Continuous Feedback (CF) is calculated from `start_cf_` (reset on event 781).
+  * A temperature $\alpha(t) = 0.5 \times (1 + \cos(\pi t / 2.5))$ decays from 1.0 to 0.0 over the first 2.5 seconds.
+  * The CVSA probability is tempered: $P_\text{prior}(c) \propto P_\text{CVSA}(c)^\alpha$.
+  * The MI probability is updated with this prior: $\text{lop}(c) \propto P_\text{MI}(c) \times P_\text{prior}(c)$.
+
+  **Step 2 — Agreement Gate:**
+  * The dot product $\text{agree} = \sum_c P_\text{CVSA}(c) \times P_\text{MI}(c)$ measures classifier agreement (0 = perfect disagreement, 1 = perfect agreement).
+  * A neutral weight $\text{neutral\_w} = (1 - \text{agree\_w}) \times \alpha$ (where $\text{agree\_w}$ scales the dot product to $[0,1]$) determines how strongly to pull toward the uniform distribution.
+  * Final output: $P_\text{out}(c) = (1 - \text{neutral\_w}) \times \text{lop}(c) + \text{neutral\_w} \times \frac{1}{n}$.
+
+  **Effect:** When MI and CVSA agree, the gate is inactive and the LOP amplifies their shared prediction. When they disagree early in the trial (high $\alpha$), the output is pulled toward $[0.5, 0.5]$, preventing erroneous buffer movement. As the trial progresses ($\alpha \to 0$), the gate fades and MI takes full control regardless of CVSA.
 
 ### 3. Smoothing and Normalization
 Regardless of the paradigm, the resulting data is passed through the loaded `rosneuro` integrator plugin (e.g., exponential smoothing) to eliminate micro-jitters. Finally, the probabilities are mathematically normalized based on the user-defined `thresholds` to ensure consistent control dynamics in the VR application.
