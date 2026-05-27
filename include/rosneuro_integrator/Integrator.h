@@ -67,6 +67,9 @@ namespace rosneuro {
                 int  reset_event_;
                 const int reset_event_default_ = 781;
 
+                float cvsa_influence_;
+                float cvsa_influence_default_ = 3.0;
+
                 // for the data synchronization
                 ros::Timer prune_timer_;
                 ros::Duration max_age_;

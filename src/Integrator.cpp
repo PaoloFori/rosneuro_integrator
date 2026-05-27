@@ -55,11 +55,13 @@ namespace rosneuro {
             }
 
             if(this->paradigm_ == "hybrid"){
-                // cvsa, mi, artifacts
+                // cvsa, mi
+                this->p_nh_.param<float>("cvsa_influence", this->cvsa_influence_, this->cvsa_influence_default_);
+                ROS_INFO("[%s] cvsa influence is set to %f seconds", this->integrator_name_.c_str(), this->cvsa_influence_);
                 this->sub_cvsa_ = this->nh_.subscribe("/cvsa/neuroprediction/raw", 1, &Integrator::onReceivedData_cvsa, this);
                 this->sub_mi_ = this->nh_.subscribe("/mi/neuroprediction/raw", 1, &Integrator::onReceivedData_mi, this);
             }else{
-                // cvsa/mi and artifacts
+                // cvsa/mi
                 if(this->paradigm_ == "cvsa"){
                     this->sub_cvsa_ = this->nh_.subscribe("/cvsa/neuroprediction/raw", 1, &Integrator::onReceivedData_cvsa, this);
                 }else if(this->paradigm_ == "mi"){
@@ -284,8 +286,8 @@ namespace rosneuro {
                     double t = (cvsa->header.stamp - this->start_cf_).toSec();
                     if (t < 0.0) t = 0.0; 
                     double alpha = 0.0;
-                    if(t <= 2.5){
-                        alpha = 0.5 * (1.0 + cos(M_PI * t / 2.5));
+                    if(t <= this->cvsa_influence_){
+                        alpha = 0.5 * (1.0 + cos(M_PI * t / this->cvsa_influence_));
                     }else{
                         alpha = 0.0;
                     }
