@@ -52,7 +52,6 @@ namespace rosneuro {
                 void integrateSyncData( std::shared_ptr<rosneuro_msgs::NeuroOutput> mi,
                                         std::shared_ptr<rosneuro_msgs::NeuroOutput> cvsa,
                                         std::shared_ptr<artifacts_bci::artifact_presence> artifact);
-                std::vector<float>  normalize_input(const std::vector<float>& input);
 
                 ros::NodeHandle nh_, p_nh_;
                 ros::Subscriber	sub_cvsa_, sub_mi_, sub_artifacts_, sub_events_;
@@ -61,7 +60,6 @@ namespace rosneuro {
                 rosneuro_msgs::NeuroOutput msgoutput_;
                 std::string paradigm_;
 
-                std::vector<float> thresholds_;
                 std::vector<int> classes_;
 
                 int  reset_event_;
@@ -69,6 +67,8 @@ namespace rosneuro {
 
                 float cvsa_influence_;
                 float cvsa_influence_default_ = 3.0;
+                float cvsa_hold_;
+                float cvsa_hold_default_ = 1.0;
 
                 // for the data synchronization
                 ros::Timer prune_timer_;

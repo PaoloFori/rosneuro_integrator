@@ -17,6 +17,8 @@ The node requires several parameters to be set in the ROS parameter server:
 * `classes`: A list of the classes used by the decoders.
 * `thresholds`: The probability thresholds required to trigger a "Hit" for each class. Used for real-time normalization.
 * `reset_event`: The event code used to reset the integrator and the temporal baseline for the Bayesian fusion.
+* `cvsa_hold`: Plateau duration in seconds — CVSA stays at full influence (α=1) for this long after the reset event (default 1.0 s).
+* `cvsa_influence`: Cosine decay duration in seconds — after the plateau, α decays from 1 to 0 over this window (default 3.0 s).
 
 ---
 
@@ -39,32 +41,48 @@ If the artifact topic flags `has_artifact: true`, the node immediately freezes t
 
 ### 2. Paradigm Routing
 * **Single Paradigms (`cvsa` or `mi`):** The node acts as a pass-through, feeding the raw probabilities directly into the generic `rosneuro` integrator plugin.
-* **Hybrid Paradigm (`hybrid`):** The node performs a **Dynamic Bayesian Fusion with Tempered Priors and Agreement Gate**, in two steps:
+* **Hybrid Paradigm (`hybrid`):** The node performs a **Dynamic Bayesian Fusion with Plateau + Cosine-Annealed CVSA Prior (LOP)**:
 
-  **Step 1 — LOP (Logarithmic Opinion Pool):**
-  * The time $t$ elapsed since the start of the Continuous Feedback (CF) is calculated from `start_cf_` (reset on event 781).
-  * A temperature $\alpha(t) = 0.5 \times (1 + \cos(\pi t / 2.5))$ decays from 1.0 to 0.0 over the first 2.5 seconds.
-  * The CVSA probability is tempered: $P_\text{prior}(c) \propto P_\text{CVSA}(c)^\alpha$.
-  * The MI probability is updated with this prior: $\text{lop}(c) \propto P_\text{MI}(c) \times P_\text{prior}(c)$.
+  The temperature $\alpha(t)$ controls how strongly CVSA acts as a prior:
 
-  **Step 2 — Agreement Gate:**
-  * The dot product $\text{agree} = \sum_c P_\text{CVSA}(c) \times P_\text{MI}(c)$ measures classifier agreement (0 = perfect disagreement, 1 = perfect agreement).
-  * A neutral weight $\text{neutral\_w} = (1 - \text{agree\_w}) \times \alpha$ (where $\text{agree\_w}$ scales the dot product to $[0,1]$) determines how strongly to pull toward the uniform distribution.
-  * Final output: $P_\text{out}(c) = (1 - \text{neutral\_w}) \times \text{lop}(c) + \text{neutral\_w} \times \frac{1}{n}$.
+  $$\alpha(t) = \begin{cases} 1 & t \leq T_\text{hold} \\ \tfrac{1}{2}\!\left(1 + \cos\!\left(\dfrac{\pi\,(t - T_\text{hold})}{T_\text{decay}}\right)\right) & T_\text{hold} < t \leq T_\text{hold} + T_\text{decay} \\ 0 & t > T_\text{hold} + T_\text{decay} \end{cases}$$
 
-  **Effect:** When MI and CVSA agree, the gate is inactive and the LOP amplifies their shared prediction. When they disagree early in the trial (high $\alpha$), the output is pulled toward $[0.5, 0.5]$, preventing erroneous buffer movement. As the trial progresses ($\alpha \to 0$), the gate fades and MI takes full control regardless of CVSA.
+  where $T_\text{hold}$ = `cvsa_hold` (default 1.0 s) and $T_\text{decay}$ = `cvsa_influence` (default 3.0 s).
 
-### 3. Smoothing and Normalization
-Regardless of the paradigm, the resulting data is passed through the loaded `rosneuro` integrator plugin (e.g., exponential smoothing) to eliminate micro-jitters. Finally, the probabilities are mathematically normalized based on the user-defined `thresholds` to ensure consistent control dynamics in the VR application.
+  The fused output is the Logarithmic Opinion Pool (LOP):
+  * $P_\text{prior}(c) \propto P_\text{CVSA}(c)^\alpha$
+  * $P_\text{out}(c) \propto P_\text{MI}(c) \times P_\text{prior}(c)$
+
+  **Overall behaviour:**
+  | Scenario | Output |
+  |----------|--------|
+  | Both agree on class A | LOP boosts above both inputs |
+  | Symmetric disagreement | Products cancel → uniform naturally |
+  | Asymmetric disagreement at $t \leq T_\text{hold}$ | CVSA redirects (reliable at trial onset) |
+  | CVSA uncertain ($P_\text{CVSA} \approx 1/n$) | Prior ≈ uniform → pure $P_\text{MI}$ |
+  | $t > T_\text{hold} + T_\text{decay}$ ($\alpha = 0$) | Pure $P_\text{MI}$ |
+
+### 3. Buffer Integration and Normalization
+Regardless of the paradigm, the fused probabilities are passed through the loaded `rosneuro` integrator plugin (e.g., `rosneuro::integrator::Buffer` — winner-take-all leaky integrator with HARD/SOFT step modes).
+
+The integrator publishes only `integrated/raw`. Normalization is performed downstream by `feedback_bci_vr/training_node`, which subscribes to `raw`, applies a per-class linear stretch, and publishes `integrated/normalized`:
+```
+slope_i = (1 - p_rest) / (threshold_i - p_rest)   where p_rest = 1/n_classes
+normalized_i = clamp(p_rest + (raw_i - p_rest) * slope_i, 0, 1)
+```
+This maps `raw_i = threshold_i → normalized_i = 1.0` independently for each class. The two outputs serve different consumers:
+* `integrated/raw` → consumed by `training_node` (evaluation modality) for hit detection: `raw[i] >= threshold[i]`.
+* `integrated/normalized` → consumed by Unity (`BCIUniversalController`) for visual/audio feedback: `offset = max(0, (normalized − 0.5) × 2)` maps `[0.5, 1.0] → [0, 1]`.
+
+The visual goal (cube at max position, audio at max volume) and the hit detection fire at the same physical instant because both are gated by the same `threshold` value.
 
 ---
 
 ## 📤 Output
-Depending on the `paradigm` parameter, the node publishes on two separate topics:
-* **Raw Topic:** `/[paradigm]/neuroprediction/integrated/raw`
-* **Normalized Topic:** `/[paradigm]/neuroprediction/integrated/normalized`
+Depending on the `paradigm` parameter, the node publishes:
+* **Raw Topic:** `/[paradigm]/neuroprediction/integrated/raw` (`rosneuro_msgs::NeuroOutput`)
 
-Both topics publish the integrated probability as a `rosneuro_msgs::NeuroOutput` message.
+The `integrated/normalized` topic is published by `feedback_bci_vr/training_node`, which subscribes to `raw` and applies the per-class linear-stretch normalization.
 
 ---
 

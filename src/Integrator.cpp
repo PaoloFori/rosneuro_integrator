@@ -35,16 +35,8 @@ namespace rosneuro {
             this->p_nh_.param<int>("reset_event", this->reset_event_, this->reset_event_default_);
             ROS_INFO("[%s] Reset event set to: %d", this->integrator_name_.c_str(), this->reset_event_);
 
-            // thresholds
             if(this->p_nh_.getParam("classes", this->classes_) == false) {
                 ROS_ERROR("[%s] Parameter 'classes' is mandatory", this->integrator_name_.c_str());
-                return false;
-            }
-            if(this->p_nh_.getParam("thresholds", this->thresholds_) == false) {
-                ROS_ERROR("[%s] Parameter 'thresholds' is mandatory for evaluation modality", this->integrator_name_.c_str());
-                return false;
-            }else if(this->thresholds_.size() != this->classes_.size()) {
-                ROS_ERROR("[%s] Number of thresholds must match the number of classes", this->integrator_name_.c_str());
                 return false;
             }
 
@@ -57,7 +49,11 @@ namespace rosneuro {
             if(this->paradigm_ == "hybrid"){
                 // cvsa, mi
                 this->p_nh_.param<float>("cvsa_influence", this->cvsa_influence_, this->cvsa_influence_default_);
-                ROS_INFO("[%s] cvsa influence is set to %f seconds", this->integrator_name_.c_str(), this->cvsa_influence_);
+                this->p_nh_.param<float>("cvsa_hold",      this->cvsa_hold_,      this->cvsa_hold_default_);
+                ROS_INFO("[%s] cvsa hold=%.2f s, decay=%.2f s (total=%.2f s)",
+                         this->integrator_name_.c_str(),
+                         this->cvsa_hold_, this->cvsa_influence_,
+                         this->cvsa_hold_ + this->cvsa_influence_);
                 this->sub_cvsa_ = this->nh_.subscribe("/cvsa/neuroprediction/raw", 1, &Integrator::onReceivedData_cvsa, this);
                 this->sub_mi_ = this->nh_.subscribe("/mi/neuroprediction/raw", 1, &Integrator::onReceivedData_mi, this);
             }else{
@@ -74,8 +70,6 @@ namespace rosneuro {
             
             std::string topic_pub_raw = "/" + this->paradigm_ + "/neuroprediction/integrated/raw";
             this->pub_raw_ = this->nh_.advertise<rosneuro_msgs::NeuroOutput>(topic_pub_raw, 1);
-            std::string topic_pub_normalized = "/" + this->paradigm_ + "/neuroprediction/integrated/normalized";
-            this->pub_normalized_ = this->nh_.advertise<rosneuro_msgs::NeuroOutput>(topic_pub_normalized, 1);
 
             this->sub_artifacts_ = this->nh_.subscribe("/artifact_presence", 1, &Integrator::onReceivedData_artifacts, this);
 
@@ -84,26 +78,6 @@ namespace rosneuro {
             ROS_INFO("[%s] Integrator correctly created and configured", this->integrator_name_.c_str());
 
             return true;
-        }
-
-        std::vector<float> Integrator::normalize_input(const std::vector<float>& input) {
-            float p_rest = 1.0f / (float)this->classes_.size();
-            std::vector<float> normalized_output(input.size(), p_rest);
-
-            for (size_t i = 0; i < input.size(); ++i) {
-                if (this->thresholds_[i] > p_rest) { 
-                
-                    float slope = (1.0f - p_rest) / (this->thresholds_[i] - p_rest);
-
-                    float mapped_val = p_rest + (input[i] - p_rest) * slope;
-                    normalized_output[i] = std::max(0.0f, std::min(1.0f, mapped_val));
-
-                } else {
-                    normalized_output[i] = input[i]; 
-                }
-            }
-        
-            return normalized_output;
         }
 
         bool Integrator::loadPlugin(void) {
@@ -284,12 +258,13 @@ namespace rosneuro {
             }else{
                 if(this->paradigm_ == "hybrid"){
                     double t = (cvsa->header.stamp - this->start_cf_).toSec();
-                    if (t < 0.0) t = 0.0; 
+                    if (t < 0.0) t = 0.0;
                     double alpha = 0.0;
-                    if(t <= this->cvsa_influence_){
-                        alpha = 0.5 * (1.0 + cos(M_PI * t / this->cvsa_influence_));
-                    }else{
-                        alpha = 0.0;
+                    if (t <= this->cvsa_hold_) {
+                        alpha = 1.0;
+                    } else if (t <= this->cvsa_hold_ + this->cvsa_influence_) {
+                        double t_decay = t - this->cvsa_hold_;
+                        alpha = 0.5 * (1.0 + cos(M_PI * t_decay / this->cvsa_influence_));
                     }
                 
                     std::vector<double> tempered_priors(num_classes, 0.0);
@@ -312,20 +287,6 @@ namespace rosneuro {
                         output[i] /= (float)sum_final;
                     }
 
-                    // Agreement gate: pull fused output toward uniform when MI and CVSA disagree.
-                    // agree_raw = dot(CVSA, MI); agree_w in [0,1] (0=disagree, 1=agree).
-                    // neutral_weight = (1 - agree_w) * alpha  →  max at t=0, zero at t>=2.5 s.
-                    // output = (1-neutral_weight)*lop + neutral_weight*(1/n)  (stays normalised).
-                    double agree_raw = 0.0;
-                    for (int i = 0; i < num_classes; i++) {
-                        agree_raw += cvsa->softpredict.data[i] * mi->softpredict.data[i];
-                    }
-                    double uniform_p      = 1.0 / num_classes;
-                    double agree_w        = std::max(0.0, (agree_raw - uniform_p) / (1.0 - uniform_p));
-                    double neutral_weight = (1.0 - agree_w) * alpha;
-                    for (int i = 0; i < num_classes; i++) {
-                        output[i] = (float)((1.0 - neutral_weight) * output[i] + neutral_weight * uniform_p);
-                    }
                 }else if(this->paradigm_ == "cvsa"){
                     output = this->vectorToEigen(cvsa->softpredict.data);
                 }else if(this->paradigm_ == "mi"){
@@ -343,10 +304,6 @@ namespace rosneuro {
             this->msgoutput_.decoder.classes = this->classes_;
 
             this->pub_raw_.publish(this->msgoutput_);
-
-            std::vector<float> normalized_output = this->normalize_input(raw_output);
-            this->msgoutput_.softpredict.data = normalized_output;
-            this->pub_normalized_.publish(this->msgoutput_);
         }
 
         bool Integrator::resetIntegrator(void) {
@@ -361,7 +318,6 @@ namespace rosneuro {
             this->msgoutput_.header.stamp = ros::Time::now();
             this->msgoutput_.softpredict.data = initial_vals;
             this->msgoutput_.decoder.classes = this->classes_;
-            this->pub_normalized_.publish(this->msgoutput_);
             this->pub_raw_.publish(this->msgoutput_);
             return true;
         }
