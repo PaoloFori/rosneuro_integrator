@@ -49,11 +49,11 @@ namespace rosneuro {
             if(this->paradigm_ == "hybrid"){
                 // cvsa, mi
                 this->p_nh_.param<float>("cvsa_influence", this->cvsa_influence_, this->cvsa_influence_default_);
-                this->p_nh_.param<float>("cvsa_hold",      this->cvsa_hold_,      this->cvsa_hold_default_);
-                ROS_INFO("[%s] cvsa hold=%.2f s, decay=%.2f s (total=%.2f s)",
+                ROS_INFO("[%s] cvsa cosine decay over %.2f s  (alpha=1@t=0, 0.5@t=%.2fs, 0@t=%.2fs)",
                          this->integrator_name_.c_str(),
-                         this->cvsa_hold_, this->cvsa_influence_,
-                         this->cvsa_hold_ + this->cvsa_influence_);
+                         this->cvsa_influence_,
+                         this->cvsa_influence_ / 2.0f,
+                         this->cvsa_influence_);
                 this->sub_cvsa_ = this->nh_.subscribe("/cvsa/neuroprediction/raw", 1, &Integrator::onReceivedData_cvsa, this);
                 this->sub_mi_ = this->nh_.subscribe("/mi/neuroprediction/raw", 1, &Integrator::onReceivedData_mi, this);
             }else{
@@ -260,11 +260,8 @@ namespace rosneuro {
                     double t = (cvsa->header.stamp - this->start_cf_).toSec();
                     if (t < 0.0) t = 0.0;
                     double alpha = 0.0;
-                    if (t <= this->cvsa_hold_) {
-                        alpha = 1.0;
-                    } else if (t <= this->cvsa_hold_ + this->cvsa_influence_) {
-                        double t_decay = t - this->cvsa_hold_;
-                        alpha = 0.5 * (1.0 + cos(M_PI * t_decay / this->cvsa_influence_));
+                    if (t < this->cvsa_influence_) {
+                        alpha = 0.5 * (1.0 + cos(M_PI * t / this->cvsa_influence_));
                     }
                 
                     std::vector<double> tempered_priors(num_classes, 0.0);
